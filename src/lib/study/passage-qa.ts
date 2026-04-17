@@ -174,7 +174,7 @@ export async function answerPassageQuestion(input: PassageQuestionRequest) {
     model: createOpenRouterModel("openai/gpt-5.4"),
     responseFormat: passageQuestionAnswerSchema as never,
     systemPrompt: [
-      "You answer questions about a selected portion of a New Testament chapter.",
+      "You answer questions about a selected portion of a Bible chapter.",
       "Use the selected text first, but explain it in light of the entire chapter and the adjacent chapters provided.",
       "Keep the answer clear, pastoral, and textually grounded.",
       "Do not claim hidden certainty. Distinguish observation from inference where necessary.",

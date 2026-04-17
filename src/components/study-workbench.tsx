@@ -10,13 +10,10 @@ import {
   type ReactNode,
 } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import AnimatedList, {
-  type AnimatedListItem,
-} from "@/components/react-bits/animated-list";
-import StaggeredText from "@/components/react-bits/staggered-text";
+import { motion, AnimatePresence } from "motion/react";
 import { cn } from "@/lib/utils";
 import { getBookChapterCount } from "@/lib/study/book-chapters";
-import { getNewTestamentBookMetadata } from "@/lib/study/book-metadata";
+import { getAllBookMetadata } from "@/lib/study/book-metadata";
 import { DEFAULT_VERSION_IDS } from "@/lib/study/constants";
 import type { StudyRunEvent } from "@/lib/study/events";
 import {
@@ -29,6 +26,8 @@ import {
 type ActiveStudy = StudyResult | PersistedStudyResult;
 type ViewKey = "summary" | "analysts" | "reader" | "context" | "sources";
 type RunStatusStage = "queued" | "running" | "completed" | "failed";
+type Phase = "create" | "running" | "review";
+type BookSortMode = "category" | "order" | "testament";
 
 type StudyWorkbenchProps = {
   initialHistory?: StudyRunSummary[];
@@ -40,6 +39,13 @@ type RunStatus = {
   label: string;
   stage: RunStatusStage;
   message: string;
+};
+
+type BookGroup = {
+  key: string;
+  title: string;
+  osisList: string[];
+  testament?: string;
 };
 
 type ConsoleEntry = {
@@ -54,16 +60,195 @@ type SelectionPromptState = {
   left: number;
 };
 
-const books = getNewTestamentBookMetadata().map((book) => ({
+type PreviewChapterData = {
+  reference: string;
+  versionId: string;
+  versionLabel: string;
+  description: string;
+  sourceUrl: string;
+  verses: Array<{
+    verse: string;
+    text: string;
+  }>;
+};
+
+const books = getAllBookMetadata().map((book) => ({
   ...book,
   chapterCount: getBookChapterCount(book.osis),
 }));
 
+const booksByOsis = new Map(books.map((book) => [book.osis, book]));
+
+const bookChipLabels: Record<string, string> = {
+  "1Sam": "1 Sam",
+  "2Sam": "2 Sam",
+  "1Kgs": "1 Kings",
+  "2Kgs": "2 Kings",
+  "1Chr": "1 Chron",
+  "2Chr": "2 Chron",
+  Song: "Song",
+  "1Cor": "1 Cor",
+  "2Cor": "2 Cor",
+  "1Thess": "1 Thess",
+  "2Thess": "2 Thess",
+  "1Tim": "1 Tim",
+  "2Tim": "2 Tim",
+  Phlm: "Philemon",
+  "1Pet": "1 Pet",
+  "2Pet": "2 Pet",
+  "1John": "1 John",
+  "2John": "2 John",
+  "3John": "3 John",
+};
+
+const categoryBookGroups: BookGroup[] = [
+  {
+    key: "ot-torah",
+    title: "Torah",
+    testament: "Old Testament",
+    osisList: ["Gen", "Exod", "Lev", "Num", "Deut"],
+  },
+  {
+    key: "ot-history",
+    title: "History",
+    testament: "Old Testament",
+    osisList: [
+      "Josh",
+      "Judg",
+      "Ruth",
+      "1Sam",
+      "2Sam",
+      "1Kgs",
+      "2Kgs",
+      "1Chr",
+      "2Chr",
+      "Ezra",
+      "Neh",
+      "Esth",
+    ],
+  },
+  {
+    key: "ot-wisdom",
+    title: "Wisdom",
+    testament: "Old Testament",
+    osisList: ["Job", "Ps", "Prov", "Eccl", "Song"],
+  },
+  {
+    key: "ot-major-prophets",
+    title: "Major prophets",
+    testament: "Old Testament",
+    osisList: ["Isa", "Jer", "Lam", "Ezek", "Dan"],
+  },
+  {
+    key: "ot-minor-prophets",
+    title: "Minor prophets",
+    testament: "Old Testament",
+    osisList: [
+      "Hos",
+      "Joel",
+      "Amos",
+      "Obad",
+      "Jonah",
+      "Mic",
+      "Nah",
+      "Hab",
+      "Zeph",
+      "Hag",
+      "Zech",
+      "Mal",
+    ],
+  },
+  {
+    key: "nt-gospels",
+    title: "Gospels",
+    testament: "New Testament",
+    osisList: ["Matt", "Mark", "Luke", "John"],
+  },
+  {
+    key: "nt-history",
+    title: "History",
+    testament: "New Testament",
+    osisList: ["Acts"],
+  },
+  {
+    key: "nt-pauline-letters",
+    title: "Pauline letters",
+    testament: "New Testament",
+    osisList: [
+      "Rom",
+      "1Cor",
+      "2Cor",
+      "Gal",
+      "Eph",
+      "Phil",
+      "Col",
+      "1Thess",
+      "2Thess",
+      "1Tim",
+      "2Tim",
+      "Titus",
+      "Phlm",
+    ],
+  },
+  {
+    key: "nt-general-letters",
+    title: "General letters",
+    testament: "New Testament",
+    osisList: [
+      "Heb",
+      "Jas",
+      "1Pet",
+      "2Pet",
+      "1John",
+      "2John",
+      "3John",
+      "Jude",
+    ],
+  },
+  {
+    key: "nt-apocalypse",
+    title: "Apocalypse",
+    testament: "New Testament",
+    osisList: ["Rev"],
+  },
+];
+
+const testamentBookGroups: BookGroup[] = [
+  {
+    key: "old-testament",
+    title: "Old Testament",
+    osisList: books
+      .filter((book) => book.testament === "Old Testament")
+      .map((book) => book.osis),
+  },
+  {
+    key: "new-testament",
+    title: "New Testament",
+    osisList: books
+      .filter((book) => book.testament === "New Testament")
+      .map((book) => book.osis),
+  },
+];
+
+const canonicalBookGroups: BookGroup[] = [
+  {
+    key: "canonical-order",
+    title: "Canonical order",
+    osisList: books.map((book) => book.osis),
+  },
+];
+
+const sortOptions: Array<{ value: BookSortMode; label: string }> = [
+  { value: "category", label: "By category" },
+  { value: "order", label: "In order" },
+  { value: "testament", label: "By testament" },
+];
+
 const viewOptions: Array<{ key: ViewKey; label: string }> = [
-  { key: "summary", label: "Final Summary" },
-  { key: "analysts", label: "Model Outputs" },
-  { key: "reader", label: "Chapter Reader" },
-  { key: "context", label: "Context Pack" },
+  { key: "summary", label: "Synthesis" },
+  { key: "analysts", label: "Models" },
+  { key: "reader", label: "Reader" },
+  { key: "context", label: "Context" },
   { key: "sources", label: "Sources" },
 ];
 
@@ -76,6 +261,22 @@ const terminalTargets: Array<{ key: string; label: string }> = [
   { key: "synthesis", label: "Final Synthesis" },
   { key: "narration", label: "Voice Overview" },
 ];
+
+function getBookButtonLabel(osis: string) {
+  return bookChipLabels[osis] ?? booksByOsis.get(osis)?.name ?? osis;
+}
+
+function getBookGroups(sortMode: BookSortMode): BookGroup[] {
+  if (sortMode === "order") {
+    return canonicalBookGroups;
+  }
+
+  if (sortMode === "testament") {
+    return testamentBookGroups;
+  }
+
+  return categoryBookGroups;
+}
 
 function createDefaultRunStatuses(): Record<string, RunStatus> {
   return Object.fromEntries(
@@ -113,22 +314,6 @@ function getNarrationAutoplayToken(study: ActiveStudy) {
     : null;
 }
 
-function parseReferenceFromStudy(study: ActiveStudy | null) {
-  if (!study) {
-    return {
-      bookName: "John",
-      chapter: "3",
-      focusQuestion: "",
-    };
-  }
-
-  return {
-    bookName: study.context.parsedReference.book.name,
-    chapter: String(study.context.parsedReference.chapter),
-    focusQuestion: study.request.focusQuestion ?? "",
-  };
-}
-
 function formatTimestamp(value: string) {
   return new Intl.DateTimeFormat("en-US", {
     month: "short",
@@ -148,61 +333,54 @@ function formatConsoleTime(value: string) {
 
 function confidenceTone(confidence: "low" | "medium" | "high") {
   if (confidence === "high") {
-    return "bg-emerald-100 text-emerald-900 ring-emerald-300";
+    return "bg-[#e7ecd5] text-[#4d5a25] ring-[#c6d2a3]";
   }
 
   if (confidence === "medium") {
-    return "bg-amber-100 text-amber-900 ring-amber-300";
+    return "bg-[#f3e7c4] text-[#7a5a1c] ring-[#e0cf97]";
   }
 
-  return "bg-rose-100 text-rose-900 ring-rose-300";
+  return "bg-[#f1d7ce] text-[#7a2e1c] ring-[#dcb1a4]";
 }
 
 function statusTone(stage: RunStatusStage) {
   if (stage === "completed") {
-    return "border-emerald-400/40 bg-emerald-500/15 text-emerald-100";
+    return "border-[#7d9a42]/50 bg-[#7d9a42]/15 text-[#d4deb0]";
   }
 
   if (stage === "running") {
-    return "border-sky-400/40 bg-sky-500/15 text-sky-100";
+    return "border-[#d4a84a]/60 bg-[#d4a84a]/15 text-[#f1deaa]";
   }
 
   if (stage === "failed") {
-    return "border-rose-400/40 bg-rose-500/15 text-rose-100";
+    return "border-[#c9533e]/60 bg-[#c9533e]/15 text-[#f3ccc0]";
   }
 
-  return "border-white/10 bg-white/5 text-slate-300";
+  return "border-[#f8f2e8]/10 bg-[#f8f2e8]/5 text-[#c9b99d]";
 }
 
-function SectionTitle({
-  eyebrow,
-  title,
-  body,
-}: {
-  eyebrow: string;
-  title: string;
-  body?: string;
-}) {
+function stageDescription(stage: RunStatusStage) {
+  if (stage === "completed") return "Done";
+  if (stage === "running") return "Running";
+  if (stage === "failed") return "Failed";
+  return "Queued";
+}
+
+function Eyebrow({ children }: { children: ReactNode }) {
   return (
-    <div>
-      <div className="text-xs font-semibold uppercase tracking-[0.28em] text-sky-700/70">
-        {eyebrow}
-      </div>
-      <h2 className="font-display mt-3 text-3xl text-slate-950">{title}</h2>
-      {body ? (
-        <p className="mt-3 max-w-3xl text-sm leading-7 text-slate-700">{body}</p>
-      ) : null}
+    <div className="text-[11px] font-semibold uppercase tracking-[0.28em] text-[#241c13]/55">
+      {children}
     </div>
   );
 }
 
-function SummaryCard({
+function Card({
   label,
   children,
   className,
   dark = false,
 }: {
-  label: string;
+  label?: string;
   children: ReactNode;
   className?: string;
   dark?: boolean;
@@ -210,23 +388,144 @@ function SummaryCard({
   return (
     <div
       className={cn(
-        "rounded-[1.75rem] border p-5",
+        "rounded-[1.25rem] border p-5",
         dark
-          ? "border-white/10 bg-white/10 shadow-none"
-          : "border-slate-200 bg-white/95 shadow-[0_16px_60px_rgba(15,23,42,0.08)]",
+          ? "border-[#f8f2e8]/15 bg-[#1a140c]/80 text-[#f3ebdb]"
+          : "border-[#241c13]/10 bg-[#fbf6ed]",
         className,
       )}
     >
-      <div
-        className={cn(
-          "text-xs font-semibold uppercase tracking-[0.24em]",
-          dark ? "text-sky-100/70" : "text-slate-500",
-        )}
-      >
-        {label}
-      </div>
-      <div className="mt-3">{children}</div>
+      {label ? (
+        <div
+          className={cn(
+            "text-[11px] font-semibold uppercase tracking-[0.24em]",
+            dark ? "text-[#e6c87c]" : "text-[#241c13]/55",
+          )}
+        >
+          {label}
+        </div>
+      ) : null}
+      <div className={label ? "mt-3" : undefined}>{children}</div>
     </div>
+  );
+}
+
+function BookPreviewModal({
+  chapter,
+  isLoading,
+  error,
+  onClose,
+}: {
+  chapter: PreviewChapterData | null;
+  isLoading: boolean;
+  error: string | null;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    }
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
+
+  return (
+    <AnimatePresence>
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="fixed inset-0 z-50 flex items-center justify-center bg-[#241c13]/45 px-4 py-8"
+        onClick={onClose}
+      >
+        <motion.div
+          initial={{ opacity: 0, y: 12, scale: 0.98 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: 8, scale: 0.98 }}
+          transition={{ duration: 0.2 }}
+          role="dialog"
+          aria-modal="true"
+          aria-label={chapter ? `${chapter.reference} preview` : "Chapter preview"}
+          className="flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-[1.5rem] border border-[#ae7a1a]/30 bg-[#fbf6ed] shadow-[0_24px_80px_rgba(36,28,19,0.24)]"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <div className="flex items-start justify-between gap-4 border-b border-[#241c13]/10 px-6 py-5">
+            <div>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#ae7a1a]">
+                Preview scripture
+              </div>
+              <h3 className="font-display mt-2 text-3xl text-[#241c13]">
+                {chapter?.reference ?? "Loading chapter..."}
+              </h3>
+              {chapter ? (
+                <div className="mt-2 text-sm text-[#241c13]/60">
+                  {chapter.versionLabel} · {chapter.versionId}
+                </div>
+              ) : null}
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-full border border-[#241c13]/15 bg-white/70 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-[#241c13]/60 transition hover:border-[#ae7a1a] hover:text-[#ae7a1a]"
+            >
+              Close
+            </button>
+          </div>
+
+          <div className="overflow-y-auto px-6 py-5">
+            {isLoading ? (
+              <div className="rounded-[1rem] border border-[#241c13]/10 bg-white/60 px-5 py-5 text-sm leading-7 text-[#241c13]/65">
+                Loading chapter text...
+              </div>
+            ) : null}
+
+            {!isLoading && error ? (
+              <div className="rounded-[1rem] border border-[#c9533e]/30 bg-[#f3d9d1]/50 px-5 py-5 text-sm leading-7 text-[#7a2e1c]">
+                {error}
+              </div>
+            ) : null}
+
+            {!isLoading && !error && chapter ? (
+              <div>
+                <div className="rounded-[1rem] border border-[#241c13]/10 bg-white/60 px-5 py-4">
+                  <div className="text-sm leading-7 text-[#241c13]/70">
+                    {chapter.description}
+                  </div>
+                </div>
+
+                <div className="mt-5 space-y-4">
+                  {chapter.verses.map((verse, index) => (
+                    <p
+                      key={`${chapter.reference}-${verse.verse}-${index}`}
+                      className="text-[17px] leading-8 text-[#241c13]/88"
+                    >
+                      <span className="mr-3 align-top text-sm font-semibold uppercase tracking-[0.16em] text-[#ae7a1a]">
+                        {verse.verse}
+                      </span>
+                      {verse.text}
+                    </p>
+                  ))}
+                </div>
+
+                <div className="mt-6 border-t border-[#241c13]/10 pt-4 text-xs text-[#241c13]/55">
+                  <a
+                    href={chapter.sourceUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="underline decoration-[#241c13]/20 underline-offset-4 hover:text-[#ae7a1a]"
+                  >
+                    Open source page
+                  </a>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </motion.div>
+      </motion.div>
+    </AnimatePresence>
   );
 }
 
@@ -236,7 +535,7 @@ function PillList({ items }: { items: string[] }) {
       {items.map((item) => (
         <span
           key={item}
-          className="rounded-full border border-slate-200 bg-white px-3 py-1 text-sm text-slate-700"
+          className="rounded-full border border-[#241c13]/15 bg-[#f8f2e8] px-3 py-1 text-sm text-[#241c13]/80"
         >
           {item}
         </span>
@@ -261,10 +560,10 @@ function BulletList({
       {items.map((item, index) => (
         <li
           key={`${item}-${index}`}
-          className="flex items-start gap-3 text-sm leading-7 text-slate-700"
+          className="flex items-start gap-3 text-[15px] leading-7 text-[#241c13]/85"
         >
-          <span className="mt-1 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-700 ring-1 ring-slate-200">
-            {ordered ? index + 1 : "•"}
+          <span className="mt-1 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#241c13]/5 text-xs font-semibold text-[#241c13]/70 ring-1 ring-[#241c13]/10">
+            {ordered ? index + 1 : "·"}
           </span>
           <span>{item}</span>
         </li>
@@ -283,12 +582,14 @@ function CrossReferenceCards({
       {items.map((item, index) => (
         <div
           key={`${item.reference}-${index}`}
-          className="rounded-[1.4rem] border border-slate-200 bg-slate-50/90 px-4 py-4"
+          className="rounded-[1rem] border border-[#241c13]/10 bg-[#f3ead8]/70 px-4 py-4"
         >
-          <div className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#ae7a1a]">
             {item.reference}
           </div>
-          <p className="mt-2 text-sm leading-7 text-slate-700">{item.relevance}</p>
+          <p className="mt-2 text-[15px] leading-7 text-[#241c13]/85">
+            {item.relevance}
+          </p>
         </div>
       ))}
     </div>
@@ -310,18 +611,22 @@ function PronunciationGuide({
       {items.map((item, index) => (
         <div
           key={`${item.term}-${index}`}
-          className="rounded-[1.4rem] border border-slate-200 bg-slate-50 px-4 py-4"
+          className="rounded-[1rem] border border-[#241c13]/10 bg-[#f3ead8]/70 px-4 py-4"
         >
           <div className="flex flex-wrap items-center gap-2">
-            <div className="text-sm font-semibold text-slate-950">{item.term}</div>
-            <span className="rounded-full bg-slate-200 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-700">
+            <div className="font-display text-lg text-[#241c13]">
+              {item.term}
+            </div>
+            <span className="rounded-full bg-[#241c13]/5 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#241c13]/60">
               {item.type}
             </span>
           </div>
-          <div className="mt-2 text-sm font-medium italic text-sky-800">
+          <div className="mt-2 text-sm italic text-[#ae7a1a]">
             {item.phonetic}
           </div>
-          <p className="mt-3 text-sm leading-7 text-slate-700">{item.explanation}</p>
+          <p className="mt-3 text-[15px] leading-7 text-[#241c13]/85">
+            {item.explanation}
+          </p>
         </div>
       ))}
     </div>
@@ -332,10 +637,14 @@ function TerminalConsole({
   logs,
   statuses,
   isStreaming,
+  reference,
+  focusQuestion,
 }: {
   logs: ConsoleEntry[];
   statuses: Record<string, RunStatus>;
   isStreaming: boolean;
+  reference?: string | null;
+  focusQuestion?: string | null;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -348,34 +657,35 @@ function TerminalConsole({
   }, [logs]);
 
   return (
-    <section className="rounded-[2rem] border border-slate-900 bg-[linear-gradient(180deg,#020617_0%,#111827_100%)] p-5 text-slate-100 shadow-[0_24px_80px_rgba(2,6,23,0.35)]">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <div className="text-xs font-semibold uppercase tracking-[0.28em] text-sky-200/80">
-            Live Agent Console
+    <section className="rounded-[1.5rem] border border-[#241c13]/80 bg-[#1a140c] text-[#f3ebdb] shadow-[0_24px_80px_rgba(36,28,19,0.25)]">
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[#f3ebdb]/10 px-6 py-4">
+        <div className="flex items-center gap-3">
+          <div className="flex gap-1.5">
+            <span className="h-2.5 w-2.5 rounded-full bg-[#c9533e]/70" />
+            <span className="h-2.5 w-2.5 rounded-full bg-[#d4a84a]/70" />
+            <span className="h-2.5 w-2.5 rounded-full bg-[#7d9a42]/70" />
           </div>
-          <p className="mt-2 text-sm leading-7 text-slate-300">
-            Streams execution activity and completion state for the context stage,
-            each analyst, and the final synthesis.
-          </p>
+          <span className="font-mono text-xs text-[#e6c87c]">
+            agents {reference ? `· ${reference}` : ""}
+          </span>
         </div>
         <span
           className={cn(
-            "rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em]",
+            "rounded-full border px-3 py-0.5 font-mono text-[10px] uppercase tracking-[0.24em]",
             isStreaming
-              ? "border-sky-400/40 bg-sky-500/15 text-sky-100"
-              : "border-white/10 bg-white/5 text-slate-300",
+              ? "border-[#d4a84a]/50 bg-[#d4a84a]/10 text-[#f1deaa]"
+              : "border-[#f3ebdb]/10 bg-[#f3ebdb]/5 text-[#c9b99d]",
           )}
         >
-          {isStreaming ? "Streaming" : "Idle"}
+          {isStreaming ? "streaming" : "idle"}
         </span>
-      </div>
+      </header>
 
-      <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+      <div className="grid gap-2 px-6 py-5 md:grid-cols-2 xl:grid-cols-3">
         {terminalTargets.map((target) => {
           const status = statuses[target.key] ?? {
             label: target.label,
-            stage: "queued",
+            stage: "queued" as RunStatusStage,
             message: "Waiting to start.",
           };
 
@@ -383,19 +693,19 @@ function TerminalConsole({
             <div
               key={target.key}
               className={cn(
-                "rounded-[1.3rem] border px-4 py-4",
+                "rounded-[0.85rem] border px-4 py-3",
                 statusTone(status.stage),
               )}
             >
               <div className="flex items-center justify-between gap-3">
-                <div className="font-mono text-xs uppercase tracking-[0.18em]">
+                <div className="font-mono text-[11px] tracking-[0.14em]">
                   {status.label}
                 </div>
-                <span className="text-[11px] font-semibold uppercase tracking-[0.18em]">
-                  {status.stage}
+                <span className="font-mono text-[10px] uppercase tracking-[0.22em] opacity-80">
+                  {stageDescription(status.stage)}
                 </span>
               </div>
-              <div className="mt-2 font-mono text-xs leading-6 text-inherit/90">
+              <div className="mt-1.5 font-mono text-[11px] leading-5 opacity-90">
                 {status.message}
               </div>
             </div>
@@ -405,17 +715,19 @@ function TerminalConsole({
 
       <div
         ref={scrollRef}
-        className="mt-5 h-[18rem] overflow-y-auto rounded-[1.5rem] border border-white/10 bg-black/30 px-4 py-4 font-mono text-xs leading-6 text-slate-200"
+        className="mx-6 mb-6 h-[18rem] overflow-y-auto rounded-[0.85rem] border border-[#f3ebdb]/10 bg-black/40 px-4 py-4 font-mono text-[11px] leading-6 text-[#e6dfcb]"
       >
         {logs.length ? (
-          <div className="space-y-1">
+          <div className="space-y-0.5">
             {logs.map((log) => (
               <div key={log.id}>{log.line}</div>
             ))}
           </div>
         ) : (
-          <div className="text-slate-400">
-            Launch a study to begin streaming agent activity.
+          <div className="text-[#9a8a6b]">
+            {focusQuestion
+              ? `Focus: ${focusQuestion}`
+              : "Initializing stream..."}
           </div>
         )}
       </div>
@@ -428,11 +740,13 @@ function FinalSummaryView({
   onCopyLink,
   narrationAutoplayToken,
   onNarrationAutoplayHandled,
+  copyState,
 }: {
   study: ActiveStudy;
   onCopyLink: () => void;
   narrationAutoplayToken: string | null;
   onNarrationAutoplayHandled: () => void;
+  copyState: "idle" | "copied";
 }) {
   const final = study.finalSynthesis;
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -463,30 +777,23 @@ function FinalSummaryView({
 
   return (
     <div className="space-y-6">
-      <section className="rounded-[2rem] border border-sky-200/70 bg-[linear-gradient(135deg,#082f49_0%,#0f172a_62%,#111827_100%)] px-6 py-7 text-slate-50 shadow-[0_24px_80px_rgba(8,47,73,0.28)]">
+      <section className="rounded-[1.5rem] border border-[#241c13]/10 bg-[#fbf6ed] px-7 py-8 shadow-[0_16px_48px_rgba(36,28,19,0.06)]">
         <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <div className="text-xs font-semibold uppercase tracking-[0.28em] text-sky-200/80">
-              Final Synthesis
-            </div>
-            <h2 className="font-display mt-3 text-4xl leading-tight text-white">
+          <div className="max-w-3xl">
+            <Eyebrow>Final synthesis</Eyebrow>
+            <h2 className="font-display mt-3 text-[2.5rem] leading-[1.1] text-[#241c13]">
               {study.context.parsedReference.reference}
             </h2>
-            <p className="mt-4 max-w-4xl text-base leading-8 text-slate-200">
+            <p className="mt-5 text-[17px] leading-8 text-[#241c13]/85">
               {final.thesis}
             </p>
           </div>
 
-          <div className="flex flex-col items-end gap-3">
+          <div className="flex flex-col items-end gap-2.5">
             <span
               className={cn(
-                "rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] ring-1",
-                final.confidence === "high" &&
-                  "bg-emerald-500/20 text-emerald-100 ring-emerald-400/40",
-                final.confidence === "medium" &&
-                  "bg-amber-500/20 text-amber-100 ring-amber-400/40",
-                final.confidence === "low" &&
-                  "bg-rose-500/20 text-rose-100 ring-rose-400/40",
+                "rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] ring-1",
+                confidenceTone(final.confidence),
               )}
             >
               {final.confidence} confidence
@@ -495,57 +802,59 @@ function FinalSummaryView({
               <button
                 type="button"
                 onClick={onCopyLink}
-                className="rounded-full border border-sky-300/40 bg-white/10 px-4 py-2 text-sm font-semibold text-sky-50 transition hover:bg-white/20"
+                className="rounded-full border border-[#241c13]/15 bg-[#f8f2e8] px-4 py-1.5 text-xs font-medium text-[#241c13]/80 transition hover:border-[#ae7a1a]/50 hover:text-[#ae7a1a]"
               >
-                Copy share link
+                {copyState === "copied" ? "Link copied" : "Copy share link"}
               </button>
             ) : null}
           </div>
         </div>
 
         <div className="mt-8 grid gap-4 xl:grid-cols-3">
-          <SummaryCard label="Historical Snapshot" dark>
-            <p className="text-sm leading-7 text-slate-100">
+          <Card label="Historical">
+            <p className="text-[15px] leading-7 text-[#241c13]/85">
               {final.historicalSnapshot}
             </p>
-          </SummaryCard>
-          <SummaryCard label="Geography Snapshot" dark>
-            <p className="text-sm leading-7 text-slate-100">
+          </Card>
+          <Card label="Geography">
+            <p className="text-[15px] leading-7 text-[#241c13]/85">
               {final.geographicSnapshot}
             </p>
-          </SummaryCard>
-          <SummaryCard label="Translation Snapshot" dark>
-            <p className="text-sm leading-7 text-slate-100">
+          </Card>
+          <Card label="Translation">
+            <p className="text-[15px] leading-7 text-[#241c13]/85">
               {final.translationSnapshot}
             </p>
-          </SummaryCard>
+          </Card>
         </div>
       </section>
 
       <div className="grid gap-6 xl:grid-cols-2">
-        <SummaryCard label="Consensus">
+        <Card label="Consensus">
           <BulletList items={final.consensus} />
-        </SummaryCard>
-        <SummaryCard label="Productive Differences">
+        </Card>
+        <Card label="Productive differences">
           <BulletList items={final.productiveDifferences} />
-        </SummaryCard>
+        </Card>
       </div>
 
       <div className="grid gap-6 xl:grid-cols-2">
-        <SummaryCard label="Canonical Links">
+        <Card label="Canonical links">
           <CrossReferenceCards items={final.canonicalLinks} />
-        </SummaryCard>
-        <SummaryCard label="Practical Takeaways">
+        </Card>
+        <Card label="Practical takeaways">
           <BulletList items={final.practicalTakeaways} ordered />
-        </SummaryCard>
+        </Card>
       </div>
 
       {study.voiceNarration ? (
-        <SummaryCard label="Voice Overview">
+        <Card label="Voice overview">
           <div className="space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-slate-600">
+            <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-[#241c13]/70">
               <span>
-                {study.voiceNarration.voice} via {study.voiceNarration.provider.toUpperCase()} · {study.voiceNarration.format.toUpperCase()}
+                {study.voiceNarration.voice} via{" "}
+                {study.voiceNarration.provider.toUpperCase()} ·{" "}
+                {study.voiceNarration.format.toUpperCase()}
               </span>
               <span>{study.voiceNarration.languageCode}</span>
             </div>
@@ -557,24 +866,26 @@ function FinalSummaryView({
               className="w-full"
               src={study.voiceNarration.audioUrl}
             />
-            <p className="text-sm leading-7 text-slate-700">
-              This narration includes the overview, historical relevance, and prayer.
+            <p className="text-[15px] leading-7 text-[#241c13]/80">
+              Overview, historical relevance, and a closing prayer.
             </p>
           </div>
-        </SummaryCard>
+        </Card>
       ) : null}
 
-      <SummaryCard label="Pronunciation Guide">
+      <Card label="Pronunciation guide">
         <PronunciationGuide items={final.pronunciationGuide} />
-      </SummaryCard>
+      </Card>
 
       <div className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
-        <SummaryCard label="Prayer Prompt">
-          <p className="text-sm leading-7 text-slate-700">{final.prayerPrompt}</p>
-        </SummaryCard>
-        <SummaryCard label="Open Questions">
+        <Card label="Prayer prompt">
+          <p className="text-[15px] leading-7 text-[#241c13]/85">
+            {final.prayerPrompt}
+          </p>
+        </Card>
+        <Card label="Open questions">
           <BulletList items={final.openQuestions} />
-        </SummaryCard>
+        </Card>
       </div>
     </div>
   );
@@ -595,17 +906,17 @@ function AnalystView({
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap gap-3">
+      <div className="flex flex-wrap gap-2">
         {study.reports.map((report) => (
           <button
             key={report.modelId}
             type="button"
             onClick={() => onSelectReport(report.modelId)}
             className={cn(
-              "rounded-full px-4 py-2 text-sm font-semibold transition",
+              "rounded-full px-4 py-1.5 text-sm transition",
               activeReport.modelId === report.modelId
-                ? "bg-sky-900 text-white shadow-[0_12px_32px_rgba(8,47,73,0.28)]"
-                : "border border-slate-200 bg-white text-slate-700 hover:border-sky-300 hover:text-sky-800",
+                ? "bg-[#241c13] text-[#f8f2e8]"
+                : "border border-[#241c13]/15 bg-[#fbf6ed] text-[#241c13]/75 hover:border-[#ae7a1a]/50 hover:text-[#ae7a1a]",
             )}
           >
             {report.modelLabel}
@@ -613,22 +924,20 @@ function AnalystView({
         ))}
       </div>
 
-      <section className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-[0_20px_70px_rgba(15,23,42,0.08)]">
+      <section className="rounded-[1.5rem] border border-[#241c13]/10 bg-[#fbf6ed] p-7 shadow-[0_16px_48px_rgba(36,28,19,0.06)]">
         <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <div className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
-              {activeReport.lens}
-            </div>
-            <h3 className="mt-2 text-3xl font-semibold text-slate-950">
+          <div className="max-w-3xl">
+            <Eyebrow>{activeReport.lens}</Eyebrow>
+            <h3 className="font-display mt-2 text-3xl text-[#241c13]">
               {activeReport.modelLabel}
             </h3>
-            <p className="mt-4 max-w-4xl text-base leading-8 text-slate-700">
+            <p className="mt-4 text-[17px] leading-8 text-[#241c13]/85">
               {activeReport.thesis}
             </p>
           </div>
           <span
             className={cn(
-              "rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] ring-1",
+              "rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] ring-1",
               confidenceTone(activeReport.confidence),
             )}
           >
@@ -637,77 +946,77 @@ function AnalystView({
         </div>
 
         <div className="mt-8 grid gap-4 xl:grid-cols-2">
-          <SummaryCard label="Historical Context">
-            <p className="text-sm leading-7 text-slate-700">
+          <Card label="Historical context">
+            <p className="text-[15px] leading-7 text-[#241c13]/85">
               {activeReport.historicalContext}
             </p>
-          </SummaryCard>
-          <SummaryCard label="Chronology + Geography">
-            <p className="text-sm leading-7 text-slate-700">
+          </Card>
+          <Card label="Chronology + geography">
+            <p className="text-[15px] leading-7 text-[#241c13]/85">
               {activeReport.chronologyInsight}
             </p>
-            <p className="mt-3 text-sm leading-7 text-slate-600">
+            <p className="mt-3 text-[15px] leading-7 text-[#241c13]/70">
               {activeReport.geographyInsight}
             </p>
-          </SummaryCard>
+          </Card>
         </div>
 
         <div className="mt-6 grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
-          <SummaryCard label="Chapter Movement">
+          <Card label="Chapter movement">
             <BulletList items={activeReport.chapterMovement} ordered />
-          </SummaryCard>
-          <SummaryCard label="Meaning">
-            <p className="text-sm leading-7 text-slate-700">{activeReport.meaning}</p>
+          </Card>
+          <Card label="Meaning">
+            <p className="text-[15px] leading-7 text-[#241c13]/85">
+              {activeReport.meaning}
+            </p>
             <div className="mt-5">
-              <div className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
-                Key Themes
-              </div>
+              <Eyebrow>Key themes</Eyebrow>
               <div className="mt-3">
                 <PillList items={activeReport.keyThemes} />
               </div>
             </div>
-          </SummaryCard>
+          </Card>
         </div>
 
         <div className="mt-6 grid gap-6 xl:grid-cols-2">
-          <SummaryCard label="Translation Insights">
+          <Card label="Translation insights">
             <div className="space-y-3">
               {activeReport.translationInsights.map((item, index) => (
                 <div
                   key={`${item.verseRange}-${index}`}
-                  className="rounded-[1.4rem] border border-slate-200 bg-slate-50 px-4 py-4"
+                  className="rounded-[1rem] border border-[#241c13]/10 bg-[#f3ead8]/70 px-4 py-4"
                 >
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-sm font-semibold text-slate-950">
+                    <span className="font-display text-base text-[#241c13]">
                       {item.verseRange}
                     </span>
-                    <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                    <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[#ae7a1a]">
                       {item.versions.join(" / ")}
                     </span>
                   </div>
-                  <p className="mt-3 text-sm leading-7 text-slate-700">
+                  <p className="mt-3 text-[15px] leading-7 text-[#241c13]/85">
                     {item.observation}
                   </p>
-                  <p className="mt-2 text-sm leading-7 text-slate-600">
+                  <p className="mt-2 text-[15px] leading-7 text-[#241c13]/70">
                     {item.significance}
                   </p>
                 </div>
               ))}
             </div>
-          </SummaryCard>
+          </Card>
 
-          <SummaryCard label="Cross References">
+          <Card label="Cross references">
             <CrossReferenceCards items={activeReport.crossReferences} />
-          </SummaryCard>
+          </Card>
         </div>
 
         <div className="mt-6 grid gap-6 xl:grid-cols-2">
-          <SummaryCard label="Lived Response">
+          <Card label="Lived response">
             <BulletList items={activeReport.livedResponse} ordered />
-          </SummaryCard>
-          <SummaryCard label="Cautions">
+          </Card>
+          <Card label="Cautions">
             <BulletList items={activeReport.cautions} />
-          </SummaryCard>
+          </Card>
         </div>
       </section>
     </div>
@@ -718,109 +1027,101 @@ function ContextPack({ study }: { study: ActiveStudy }) {
   return (
     <div className="space-y-6">
       <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
-        <SummaryCard label="Book Summary">
-          <p className="text-sm leading-7 text-slate-700">
+        <Card label="Book summary">
+          <p className="text-[15px] leading-7 text-[#241c13]/85">
             {study.context.parsedReference.book.summary}
           </p>
           <div className="mt-4 grid gap-3 md:grid-cols-2">
-            <div className="rounded-2xl bg-slate-50 px-4 py-3">
-              <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                Genre
-              </div>
-              <div className="mt-2 text-sm font-semibold text-slate-900">
+            <div className="rounded-[0.85rem] bg-[#f3ead8]/70 px-4 py-3">
+              <Eyebrow>Genre</Eyebrow>
+              <div className="mt-1 font-display text-base text-[#241c13]">
                 {study.context.parsedReference.book.genre}
               </div>
             </div>
-            <div className="rounded-2xl bg-slate-50 px-4 py-3">
-              <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                Composition Window
-              </div>
-              <div className="mt-2 text-sm font-semibold text-slate-900">
+            <div className="rounded-[0.85rem] bg-[#f3ead8]/70 px-4 py-3">
+              <Eyebrow>Composition</Eyebrow>
+              <div className="mt-1 font-display text-base text-[#241c13]">
                 {study.context.parsedReference.book.compositionWindow}
               </div>
             </div>
           </div>
-        </SummaryCard>
+        </Card>
 
-        <SummaryCard label="Setting">
-          <p className="text-sm leading-7 text-slate-700">
+        <Card label="Setting">
+          <p className="text-[15px] leading-7 text-[#241c13]/85">
             {study.context.parsedReference.book.setting}
           </p>
-        </SummaryCard>
+        </Card>
       </div>
 
-      <SummaryCard label="Adjacent Chapters">
+      <Card label="Adjacent chapters">
         {study.context.relatedChapters.length ? (
           <div className="grid gap-3 lg:grid-cols-2">
             {study.context.relatedChapters.map((chapter) => (
               <div
                 key={chapter.reference}
-                className="rounded-[1.4rem] border border-slate-200 bg-slate-50 px-4 py-4"
+                className="rounded-[1rem] border border-[#241c13]/10 bg-[#f3ead8]/70 px-4 py-4"
               >
                 <div className="flex items-center justify-between gap-3">
-                  <div className="text-sm font-semibold text-slate-950">
+                  <div className="font-display text-base text-[#241c13]">
                     {chapter.reference}
                   </div>
-                  <span className="rounded-full bg-sky-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-900">
+                  <span className="rounded-full bg-[#ae7a1a]/10 px-3 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#ae7a1a]">
                     {chapter.relation}
                   </span>
                 </div>
-                <div className="mt-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                  {chapter.versionLabel}
-                </div>
-                <p className="mt-3 text-sm leading-7 text-slate-700">
+                <Eyebrow>{chapter.versionLabel}</Eyebrow>
+                <p className="mt-3 text-[15px] leading-7 text-[#241c13]/85">
                   {chapter.summary}
                 </p>
               </div>
             ))}
           </div>
         ) : (
-          <p className="text-sm leading-7 text-slate-700">
+          <p className="text-[15px] leading-7 text-[#241c13]/75">
             No adjacent chapter context was available for this chapter.
           </p>
         )}
-      </SummaryCard>
+      </Card>
 
-      <SummaryCard label="Geography">
+      <Card label="Geography">
         {study.context.geography.length ? (
           <div className="grid gap-3 lg:grid-cols-2">
             {study.context.geography.map((place) => (
               <div
                 key={place.name}
-                className="overflow-hidden rounded-[1.4rem] border border-slate-200 bg-slate-50"
+                className="overflow-hidden rounded-[1rem] border border-[#241c13]/10 bg-[#f3ead8]/70"
               >
-	                {place.photoMatch ? (
-	                  <a
-	                    href={place.photoMatch.pageUrl}
-	                    target="_blank"
-	                    rel="noreferrer"
-	                    className="block"
-	                  >
-	                    {/* eslint-disable-next-line @next/next/no-img-element */}
-	                    <img
-	                      src={place.photoMatch.imageUrl}
-	                      alt={place.photoMatch.caption}
-	                      className="h-44 w-full object-cover"
-	                    />
+                {place.photoMatch ? (
+                  <a
+                    href={place.photoMatch.pageUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="block"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={place.photoMatch.imageUrl}
+                      alt={place.photoMatch.caption}
+                      className="h-44 w-full object-cover"
+                    />
                   </a>
                 ) : null}
                 <div className="px-4 py-4">
-                  <div className="text-sm font-semibold text-slate-950">
+                  <div className="font-display text-base text-[#241c13]">
                     {place.name}
                   </div>
-                  <div className="mt-1 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                    {place.type}
-                  </div>
-                  <p className="mt-3 text-sm leading-7 text-slate-700">
+                  <Eyebrow>{place.type}</Eyebrow>
+                  <p className="mt-3 text-[15px] leading-7 text-[#241c13]/85">
                     {place.summary}
                   </p>
                   {place.photoMatch ? (
-                    <p className="mt-3 text-xs leading-6 text-slate-500">
-                      Photo match: {place.photoMatch.caption}
+                    <p className="mt-3 text-xs leading-6 text-[#241c13]/55">
+                      Photo: {place.photoMatch.caption}
                     </p>
                   ) : null}
                   {place.coordinates ? (
-                    <p className="mt-2 text-xs uppercase tracking-[0.18em] text-slate-500">
+                    <p className="mt-2 text-[11px] uppercase tracking-[0.2em] text-[#241c13]/55">
                       {place.coordinates}
                     </p>
                   ) : null}
@@ -829,11 +1130,11 @@ function ContextPack({ study }: { study: ActiveStudy }) {
             ))}
           </div>
         ) : (
-          <p className="text-sm leading-7 text-slate-700">
-            No explicit place matches were found for this chapter in the OpenBible geography dataset.
+          <p className="text-[15px] leading-7 text-[#241c13]/75">
+            No explicit place matches were found in the OpenBible geography dataset.
           </p>
         )}
-      </SummaryCard>
+      </Card>
     </div>
   );
 }
@@ -841,7 +1142,7 @@ function ContextPack({ study }: { study: ActiveStudy }) {
 function SourcesView({ study }: { study: ActiveStudy }) {
   return (
     <div className="space-y-6">
-      <SummaryCard label="Source Catalog">
+      <Card label="Source catalog">
         <div className="grid gap-3 lg:grid-cols-2">
           {study.context.sourceCatalog.map((source) => (
             <a
@@ -849,26 +1150,26 @@ function SourcesView({ study }: { study: ActiveStudy }) {
               href={source.url}
               target="_blank"
               rel="noreferrer"
-              className="rounded-[1.4rem] border border-slate-200 bg-slate-50 px-4 py-4 transition hover:border-sky-300 hover:bg-sky-50/60"
+              className="rounded-[1rem] border border-[#241c13]/10 bg-[#f3ead8]/70 px-4 py-4 transition hover:border-[#ae7a1a]/40 hover:bg-[#f3e3c6]/70"
             >
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <div className="text-sm font-semibold text-slate-950">
+                  <div className="font-display text-base text-[#241c13]">
                     {source.label}
                   </div>
-                  <div className="mt-2 text-sm leading-7 text-slate-700">
+                  <div className="mt-2 text-[15px] leading-7 text-[#241c13]/80">
                     {source.note}
                   </div>
                 </div>
                 <span
                   className={cn(
-                    "rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] ring-1",
+                    "rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.22em] ring-1",
                     source.status === "active" &&
-                      "bg-emerald-100 text-emerald-900 ring-emerald-300",
+                      "bg-[#e7ecd5] text-[#4d5a25] ring-[#c6d2a3]",
                     source.status === "fallback" &&
-                      "bg-amber-100 text-amber-900 ring-amber-300",
+                      "bg-[#f3e7c4] text-[#7a5a1c] ring-[#e0cf97]",
                     source.status === "inactive" &&
-                      "bg-slate-100 text-slate-700 ring-slate-300",
+                      "bg-[#241c13]/5 text-[#241c13]/60 ring-[#241c13]/15",
                   )}
                 >
                   {source.status}
@@ -877,47 +1178,945 @@ function SourcesView({ study }: { study: ActiveStudy }) {
             </a>
           ))}
         </div>
-      </SummaryCard>
+      </Card>
 
-      <SummaryCard label="Diagnostics">
+      <Card label="Diagnostics">
         <BulletList
           items={study.warnings.length ? study.warnings : study.context.sourceDiagnostics}
         />
-      </SummaryCard>
+      </Card>
     </div>
   );
 }
 
-function EmptyState() {
+function AppHeader({ recentCount }: { recentCount: number }) {
   return (
-    <section className="rounded-[2rem] border border-dashed border-sky-200 bg-white/85 px-6 py-10 shadow-[0_20px_80px_rgba(15,23,42,0.06)]">
-      <SectionTitle
-        eyebrow="Ready To Study"
-        title="Choose a New Testament book and chapter to open a study workspace."
-        body="The app will compare five translations, include adjacent chapter context, geographic matches, four model analyses, one final synthesis, and saved passage questions."
-      />
+    <header className="mx-auto flex max-w-[104rem] items-center justify-between px-6 py-6 lg:px-10">
+      <Link href="/" className="flex items-center gap-3 group">
+        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[#241c13] font-display text-sm text-[#f8f2e8]">
+          α
+        </span>
+        <span className="font-display text-lg text-[#241c13] transition group-hover:text-[#ae7a1a]">
+          Bible study
+        </span>
+      </Link>
+      {recentCount > 0 ? (
+        <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#241c13]/55">
+          {recentCount} recent {recentCount === 1 ? "study" : "studies"}
+        </span>
+      ) : null}
+    </header>
+  );
+}
 
-      <div className="mt-8 grid gap-4 md:grid-cols-3">
-        {[
-          {
-            label: "Launch",
-            body: "Pick a New Testament chapter and optionally add a focus question before the agents begin.",
-          },
-          {
-            label: "Watch",
-            body: "The live console streams context preparation, each analyst run, and the final synthesis stage.",
-          },
-          {
-            label: "Study",
-            body: "Read one translation at a time, highlight a section, and save focused GPT-5.4 questions for future review.",
-          },
-        ].map((card) => (
-          <SummaryCard key={card.label} label={card.label}>
-            <p className="text-sm leading-7 text-slate-700">{card.body}</p>
-          </SummaryCard>
-        ))}
+function HistoryRail({ history }: { history: StudyRunSummary[] }) {
+  if (!history.length) return null;
+  const items = history.slice(0, 6);
+  return (
+    <section className="border-t border-[#241c13]/10 bg-[#fbf6ed]/50">
+      <div className="mx-auto max-w-[104rem] px-6 py-10 lg:px-10">
+        <div className="flex items-end justify-between gap-4">
+          <div>
+            <Eyebrow>Recent studies</Eyebrow>
+            <h2 className="font-display mt-1 text-2xl text-[#241c13]">
+              Return to what you&apos;ve already opened
+            </h2>
+          </div>
+        </div>
+        <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {items.map((entry) => (
+            <Link
+              key={entry.id}
+              href={`/studies/${entry.slug}`}
+              className="group rounded-[1.25rem] border border-[#241c13]/10 bg-[#fbf6ed] px-5 py-5 transition hover:border-[#ae7a1a]/50 hover:bg-[#f3e3c6]/40"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div className="font-display text-lg text-[#241c13] group-hover:text-[#ae7a1a]">
+                  {entry.reference}
+                </div>
+                <span
+                  className={cn(
+                    "rounded-full px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] ring-1",
+                    confidenceTone(entry.confidence),
+                  )}
+                >
+                  {entry.confidence}
+                </span>
+              </div>
+              <div className="mt-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-[#241c13]/50">
+                {formatTimestamp(entry.createdAt)}
+              </div>
+              <p className="mt-3 line-clamp-3 text-sm leading-6 text-[#241c13]/75">
+                {entry.finalThesis}
+              </p>
+            </Link>
+          ))}
+        </div>
       </div>
     </section>
+  );
+}
+
+function CreateStudyView({
+  selectedOsis,
+  onSelectBook,
+  sortMode,
+  onSortModeChange,
+  chapterValue,
+  onChapterChange,
+  focusQuestion,
+  onFocusChange,
+  onSubmit,
+  canSubmit,
+  isSubmitting,
+  error,
+  history,
+}: {
+  selectedOsis: string;
+  onSelectBook: (osis: string) => void;
+  sortMode: BookSortMode;
+  onSortModeChange: (value: BookSortMode) => void;
+  chapterValue: string;
+  onChapterChange: (value: string) => void;
+  focusQuestion: string;
+  onFocusChange: (value: string) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  canSubmit: boolean;
+  isSubmitting: boolean;
+  error: string | null;
+  history: StudyRunSummary[];
+}) {
+  const selectedBook = books.find((book) => book.osis === selectedOsis) ?? null;
+  const previewChapterNumber =
+    Number.isInteger(Number(chapterValue)) && Number(chapterValue) > 0
+      ? Number(chapterValue)
+      : 1;
+  const visibleBookGroups = useMemo(() => getBookGroups(sortMode), [sortMode]);
+  const chapters = useMemo(() => {
+    if (!selectedBook) return [];
+    return Array.from({ length: selectedBook.chapterCount }, (_, i) => i + 1);
+  }, [selectedBook]);
+  const [previewModalOpen, setPreviewModalOpen] = useState(false);
+  const [previewChapter, setPreviewChapter] = useState<PreviewChapterData | null>(
+    null,
+  );
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [isPreviewLoading, setIsPreviewLoading] = useState(false);
+
+  async function onOpenPreview() {
+    if (!selectedBook) {
+      return;
+    }
+
+    setPreviewModalOpen(true);
+    setPreviewChapter(null);
+    setPreviewError(null);
+    setIsPreviewLoading(true);
+
+    try {
+      const reference = `${selectedBook.name} ${previewChapterNumber}`;
+      const params = new URLSearchParams({
+        reference,
+        version: DEFAULT_VERSION_IDS[0],
+      });
+      const response = await fetch(`/api/study/preview?${params.toString()}`);
+      const payload = (await response.json()) as
+        | PreviewChapterData
+        | { error?: string };
+
+      if (!response.ok || !("reference" in payload)) {
+        throw new Error(
+          "error" in payload && payload.error
+            ? payload.error
+            : "The chapter preview failed.",
+        );
+      }
+
+      setPreviewChapter(payload);
+    } catch (previewLoadError) {
+      setPreviewError(
+        previewLoadError instanceof Error
+          ? previewLoadError.message
+          : "The chapter preview failed.",
+      );
+    } finally {
+      setIsPreviewLoading(false);
+    }
+  }
+
+  return (
+    <div className="flex min-h-screen flex-col">
+      <AppHeader recentCount={history.length} />
+
+      <div className="flex-1">
+        <div className="mx-auto max-w-3xl px-6 pt-6 pb-16 lg:pt-10">
+          <div className="mb-12">
+            <Eyebrow>Open a study</Eyebrow>
+            <h1 className="font-display mt-3 text-[2.75rem] leading-[1.05] text-[#241c13] md:text-[3.25rem]">
+              Pick a chapter to open
+              <br />
+              <span className="text-[#ae7a1a]">to the agents.</span>
+            </h1>
+            <p className="mt-5 max-w-xl text-[17px] leading-8 text-[#241c13]/75">
+              Five translations, adjacent chapter context, four model readings,
+              and one final synthesis. You choose the focus.
+            </p>
+          </div>
+
+          <form onSubmit={onSubmit} className="space-y-14">
+            <section>
+              <div className="flex flex-wrap items-baseline gap-3">
+                <span className="font-display text-lg text-[#ae7a1a]">01</span>
+                <h2 className="font-display text-xl text-[#241c13]">Book</h2>
+                <div className="ml-auto flex flex-wrap gap-2">
+                  {sortOptions.map((option) => {
+                    const active = sortMode === option.value;
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        aria-pressed={active}
+                        onClick={() => onSortModeChange(option.value)}
+                        className={cn(
+                          "rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] transition",
+                          active
+                            ? "border-[#241c13] bg-[#241c13] text-[#f8f2e8]"
+                            : "border-[#241c13]/15 bg-[#fbf6ed] text-[#241c13]/60 hover:border-[#ae7a1a] hover:text-[#ae7a1a]",
+                        )}
+                      >
+                        {option.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="mt-5 space-y-5">
+                {visibleBookGroups.map((group) => (
+                  <div key={group.key}>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="text-[10px] font-semibold uppercase tracking-[0.28em] text-[#241c13]/40">
+                        {group.title}
+                      </div>
+                      {group.testament ? (
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#ae7a1a]/70">
+                          {group.testament}
+                        </div>
+                      ) : null}
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {group.osisList.map((osis) => {
+                        const book = booksByOsis.get(osis);
+                        if (!book) return null;
+                        const active = selectedOsis === osis;
+                        return (
+                          <button
+                            key={osis}
+                            type="button"
+                            onClick={() => {
+                              onSelectBook(osis);
+                              onChapterChange("");
+                            }}
+                            className={cn(
+                              "rounded-full border px-4 py-1.5 font-display text-base transition",
+                              active
+                                ? "border-[#ae7a1a] bg-[#f3e3c6] text-[#7b5311] shadow-[0_6px_18px_rgba(174,122,26,0.12)]"
+                                : "border-[#241c13]/15 bg-[#fbf6ed] text-[#241c13] hover:-translate-y-px hover:border-[#ae7a1a] hover:text-[#ae7a1a]",
+                            )}
+                          >
+                            {getBookButtonLabel(osis)}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <AnimatePresence>
+                {selectedBook ? (
+                  <motion.div
+                    initial={{ opacity: 0, y: 4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -4 }}
+                    className="mt-5 rounded-[1.25rem] border border-[#ae7a1a]/40 bg-[#fbf6ed] px-5 py-4"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <div className="flex flex-wrap items-center gap-3">
+                          <div className="font-display text-2xl text-[#241c13]">
+                            {selectedBook.name}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={onOpenPreview}
+                            className="rounded-full border border-[#241c13]/15 bg-white/70 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#241c13]/60 transition hover:border-[#ae7a1a] hover:text-[#ae7a1a]"
+                          >
+                            Preview scripture
+                          </button>
+                        </div>
+                        <div className="mt-1 text-xs text-[#241c13]/60">
+                          {selectedBook.testament} · {selectedBook.genre} ·{" "}
+                          {selectedBook.chapterCount} chapters
+                        </div>
+                      </div>
+                      <div className="text-right text-[11px] uppercase tracking-[0.18em] text-[#241c13]/45">
+                        Chapter {previewChapterNumber}
+                      </div>
+                    </div>
+                    <p className="mt-3 text-sm leading-6 text-[#241c13]/75">
+                      {selectedBook.summary}
+                    </p>
+                  </motion.div>
+                ) : null}
+              </AnimatePresence>
+            </section>
+
+            <AnimatePresence>
+              {selectedBook ? (
+                <motion.section
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -4 }}
+                  transition={{ duration: 0.25 }}
+                >
+                  <div className="flex items-baseline gap-3">
+                    <span className="font-display text-lg text-[#ae7a1a]">02</span>
+                    <h2 className="font-display text-xl text-[#241c13]">
+                      Chapter
+                    </h2>
+                  </div>
+                  <div
+                    className="mt-5 grid gap-2"
+                    style={{
+                      gridTemplateColumns: "repeat(auto-fill, minmax(3rem, 1fr))",
+                    }}
+                  >
+                    {chapters.map((n) => {
+                      const value = String(n);
+                      const active = chapterValue === value;
+                      return (
+                        <button
+                          key={n}
+                          type="button"
+                          onClick={() => onChapterChange(value)}
+                          className={cn(
+                            "flex h-12 items-center justify-center rounded-[0.85rem] font-display text-lg transition",
+                            active
+                              ? "bg-[#241c13] text-[#f8f2e8] shadow-[0_6px_16px_rgba(36,28,19,0.2)]"
+                              : "border border-[#241c13]/15 bg-[#fbf6ed] text-[#241c13]/75 hover:border-[#ae7a1a] hover:text-[#ae7a1a]",
+                          )}
+                        >
+                          {n}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </motion.section>
+              ) : null}
+            </AnimatePresence>
+
+            <AnimatePresence>
+              {selectedBook && chapterValue ? (
+                <motion.section
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -4 }}
+                  transition={{ duration: 0.25 }}
+                  className="space-y-8"
+                >
+                  <div>
+                    <div className="flex items-baseline gap-3">
+                      <span className="font-display text-lg text-[#ae7a1a]">
+                        03
+                      </span>
+                      <h2 className="font-display text-xl text-[#241c13]">
+                        Focus question
+                      </h2>
+                      <span className="text-xs text-[#241c13]/50">optional</span>
+                    </div>
+                    <textarea
+                      value={focusQuestion}
+                      onChange={(event) => onFocusChange(event.target.value)}
+                      rows={3}
+                      placeholder="e.g. What does this chapter teach about the kingdom?"
+                      className="mt-4 w-full rounded-[1rem] border border-[#241c13]/15 bg-[#fbf6ed] px-4 py-3 text-[16px] leading-7 text-[#241c13] outline-none transition placeholder:text-[#241c13]/40 focus:border-[#ae7a1a] focus:bg-white"
+                    />
+                  </div>
+
+                  <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="text-xs leading-6 text-[#241c13]/55">
+                      Translations:{" "}
+                      <span className="text-[#241c13]/80">
+                        {DEFAULT_VERSION_IDS.join(" · ")}
+                      </span>
+                    </div>
+                    <button
+                      type="submit"
+                      disabled={!canSubmit}
+                      className={cn(
+                        "group inline-flex items-center gap-3 rounded-full px-6 py-3 font-display text-base transition",
+                        canSubmit
+                          ? "bg-[#241c13] text-[#f8f2e8] shadow-[0_12px_28px_rgba(36,28,19,0.22)] hover:bg-[#ae7a1a]"
+                          : "cursor-not-allowed bg-[#241c13]/20 text-[#241c13]/45",
+                      )}
+                    >
+                      <span>{isSubmitting ? "Starting..." : "Begin study"}</span>
+                      <span className="transition group-hover:translate-x-0.5">
+                        →
+                      </span>
+                    </button>
+                  </div>
+                </motion.section>
+              ) : null}
+            </AnimatePresence>
+
+            {error ? (
+              <div className="rounded-[1rem] border border-[#c9533e]/30 bg-[#f3d9d1]/50 px-4 py-3 text-sm leading-6 text-[#7a2e1c]">
+                {error}
+              </div>
+            ) : null}
+          </form>
+        </div>
+      </div>
+
+      {previewModalOpen ? (
+        <BookPreviewModal
+          chapter={previewChapter}
+          isLoading={isPreviewLoading}
+          error={previewError}
+          onClose={() => {
+            setPreviewModalOpen(false);
+            setPreviewChapter(null);
+            setPreviewError(null);
+            setIsPreviewLoading(false);
+          }}
+        />
+      ) : null}
+
+      <HistoryRail history={history} />
+    </div>
+  );
+}
+
+function RunningStudyView({
+  reference,
+  focusQuestion,
+  logs,
+  statuses,
+  isStreaming,
+  error,
+  onCancelToCreate,
+}: {
+  reference: string;
+  focusQuestion: string | null;
+  logs: ConsoleEntry[];
+  statuses: Record<string, RunStatus>;
+  isStreaming: boolean;
+  error: string | null;
+  onCancelToCreate: () => void;
+}) {
+  return (
+    <div className="flex min-h-screen flex-col">
+      <AppHeader recentCount={0} />
+      <div className="mx-auto w-full max-w-5xl flex-1 px-6 pb-14 pt-2 lg:pt-6">
+        <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <Eyebrow>Studying</Eyebrow>
+            <h1 className="font-display mt-2 text-[2.75rem] leading-[1.05] text-[#241c13]">
+              {reference}
+            </h1>
+            {focusQuestion ? (
+              <p className="mt-3 max-w-2xl text-[15px] leading-7 text-[#241c13]/75">
+                <span className="text-[#241c13]/50">Focus — </span>
+                {focusQuestion}
+              </p>
+            ) : null}
+          </div>
+          <button
+            type="button"
+            onClick={onCancelToCreate}
+            className="text-xs text-[#241c13]/55 underline decoration-[#241c13]/20 underline-offset-4 hover:text-[#ae7a1a]"
+          >
+            Start over
+          </button>
+        </div>
+
+        <TerminalConsole
+          logs={logs}
+          statuses={statuses}
+          isStreaming={isStreaming}
+          reference={reference}
+          focusQuestion={focusQuestion}
+        />
+
+        {error ? (
+          <div className="mt-6 rounded-[1rem] border border-[#c9533e]/30 bg-[#f3d9d1]/50 px-4 py-3 text-sm leading-6 text-[#7a2e1c]">
+            {error}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function ReviewStudyView({
+  study,
+  history,
+  passageQuestions,
+  activeView,
+  onSetView,
+  selectedReportId,
+  onSelectReport,
+  selectedVersionId,
+  onSelectVersion,
+  copyState,
+  onCopyLink,
+  narrationAutoplayToken,
+  onNarrationAutoplayHandled,
+  selectionPrompt,
+  setSelectionPrompt,
+  questionError,
+  setQuestionError,
+  readerRef,
+  onReaderMouseUp,
+  onSubmitPassageQuestion,
+  isAskingQuestion,
+  onStartNewStudy,
+}: {
+  study: ActiveStudy;
+  history: StudyRunSummary[];
+  passageQuestions: PersistedPassageQuestion[];
+  activeView: ViewKey;
+  onSetView: (view: ViewKey) => void;
+  selectedReportId: string | null;
+  onSelectReport: (modelId: string) => void;
+  selectedVersionId: string;
+  onSelectVersion: (versionId: string) => void;
+  copyState: "idle" | "copied";
+  onCopyLink: () => void;
+  narrationAutoplayToken: string | null;
+  onNarrationAutoplayHandled: () => void;
+  selectionPrompt: SelectionPromptState | null;
+  setSelectionPrompt: (
+    updater:
+      | SelectionPromptState
+      | null
+      | ((prev: SelectionPromptState | null) => SelectionPromptState | null),
+  ) => void;
+  questionError: string | null;
+  setQuestionError: (value: string | null) => void;
+  readerRef: React.RefObject<HTMLDivElement | null>;
+  onReaderMouseUp: () => void;
+  onSubmitPassageQuestion: () => void;
+  isAskingQuestion: boolean;
+  onStartNewStudy: () => void;
+}) {
+  const currentVersion =
+    study.context.versions.find(
+      (version) => version.versionId === selectedVersionId,
+    ) ??
+    study.context.versions[0] ??
+    null;
+  const selectedQuestionId = passageQuestions[0]?.id ?? null;
+
+  return (
+    <div className="min-h-screen">
+      <AppHeader recentCount={history.length} />
+
+      <div className="mx-auto grid max-w-[104rem] gap-8 px-6 pb-14 pt-2 lg:grid-cols-[18rem_minmax(0,1fr)] lg:px-10 lg:pt-4">
+        <aside className="space-y-5">
+          <button
+            type="button"
+            onClick={onStartNewStudy}
+            className="group flex w-full items-center justify-between rounded-[1rem] border border-[#241c13]/15 bg-[#fbf6ed] px-4 py-3 text-left transition hover:border-[#ae7a1a] hover:bg-[#f3e3c6]/40"
+          >
+            <span>
+              <div className="font-display text-base text-[#241c13] group-hover:text-[#ae7a1a]">
+                New study
+              </div>
+              <div className="text-[11px] uppercase tracking-[0.2em] text-[#241c13]/50">
+                Pick another chapter
+              </div>
+            </span>
+            <span className="text-lg text-[#241c13]/40 transition group-hover:translate-x-0.5 group-hover:text-[#ae7a1a]">
+              →
+            </span>
+          </button>
+
+          <section>
+            <Eyebrow>Recent</Eyebrow>
+            <div className="mt-3 space-y-2">
+              {history.length ? (
+                history.map((entry) => {
+                  const active = hasSlug(study) && entry.id === study.id;
+                  return (
+                    <Link
+                      key={entry.id}
+                      href={`/studies/${entry.slug}`}
+                      className={cn(
+                        "block rounded-[0.85rem] border px-3 py-3 transition",
+                        active
+                          ? "border-[#ae7a1a] bg-[#fbf6ed]"
+                          : "border-[#241c13]/10 bg-[#fbf6ed]/60 hover:border-[#ae7a1a]/50 hover:bg-[#fbf6ed]",
+                      )}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="font-display text-sm text-[#241c13]">
+                          {entry.reference}
+                        </div>
+                        <span
+                          className={cn(
+                            "rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.2em] ring-1",
+                            confidenceTone(entry.confidence),
+                          )}
+                        >
+                          {entry.confidence}
+                        </span>
+                      </div>
+                      <div className="mt-1 text-[10px] uppercase tracking-[0.2em] text-[#241c13]/45">
+                        {formatTimestamp(entry.createdAt)}
+                      </div>
+                      <p className="mt-2 line-clamp-2 text-xs leading-5 text-[#241c13]/70">
+                        {entry.finalThesis}
+                      </p>
+                    </Link>
+                  );
+                })
+              ) : (
+                <div className="rounded-[0.85rem] border border-dashed border-[#241c13]/15 bg-[#fbf6ed]/40 px-3 py-4 text-xs leading-5 text-[#241c13]/60">
+                  Saved studies will appear here.
+                </div>
+              )}
+            </div>
+          </section>
+        </aside>
+
+        <section className="space-y-6">
+          <section className="rounded-[1.5rem] border border-[#241c13]/10 bg-[#fbf6ed] px-6 py-6 shadow-[0_16px_48px_rgba(36,28,19,0.06)]">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <Eyebrow>Active study</Eyebrow>
+                <h1 className="font-display mt-2 text-[2.75rem] leading-[1.05] text-[#241c13]">
+                  {study.context.parsedReference.reference}
+                </h1>
+                <p className="mt-3 max-w-2xl text-[15px] leading-7 text-[#241c13]/75">
+                  {study.request.focusQuestion
+                    ? study.request.focusQuestion
+                    : study.context.parsedReference.book.summary}
+                </p>
+              </div>
+              <div className="rounded-[1rem] border border-[#241c13]/10 bg-[#f3ead8]/70 px-4 py-3 text-xs text-[#241c13]/70">
+                {hasSlug(study) ? (
+                  <div>
+                    <span className="text-[#241c13]/50">ID </span>
+                    {study.id.slice(0, 8)}
+                  </div>
+                ) : null}
+                <div className="mt-1">
+                  <span className="text-[#241c13]/50">Generated </span>
+                  {formatTimestamp(study.generatedAt)}
+                </div>
+                <div className="mt-1">
+                  <span className="text-[#241c13]/50">Versions </span>
+                  {study.context.versions
+                    .map((version) => version.versionId)
+                    .join(", ")}
+                </div>
+                {copyState === "copied" ? (
+                  <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.22em] text-[#7d9a42]">
+                    Link copied
+                  </div>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="mt-6 flex flex-wrap gap-2">
+              {viewOptions.map((option) => (
+                <button
+                  key={option.key}
+                  type="button"
+                  onClick={() => onSetView(option.key)}
+                  className={cn(
+                    "rounded-full px-4 py-1.5 text-sm transition",
+                    activeView === option.key
+                      ? "bg-[#241c13] text-[#f8f2e8]"
+                      : "border border-[#241c13]/15 bg-[#fbf6ed] text-[#241c13]/75 hover:border-[#ae7a1a]/50 hover:text-[#ae7a1a]",
+                  )}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </section>
+
+          {activeView === "summary" ? (
+            <FinalSummaryView
+              study={study}
+              onCopyLink={onCopyLink}
+              narrationAutoplayToken={narrationAutoplayToken}
+              onNarrationAutoplayHandled={onNarrationAutoplayHandled}
+              copyState={copyState}
+            />
+          ) : null}
+
+          {activeView === "analysts" ? (
+            <AnalystView
+              study={study}
+              selectedReportId={selectedReportId}
+              onSelectReport={onSelectReport}
+            />
+          ) : null}
+
+          {activeView === "reader" ? (
+            <div className="space-y-6">
+              <div>
+                <Eyebrow>Chapter reader</Eyebrow>
+                <h2 className="font-display mt-2 text-3xl text-[#241c13]">
+                  Read, highlight, and ask.
+                </h2>
+                <p className="mt-2 max-w-3xl text-[15px] leading-7 text-[#241c13]/75">
+                  Highlight any portion of the chapter to open a focused question.
+                  Answers are saved with this study.
+                </p>
+              </div>
+
+              <section className="rounded-[1.5rem] border border-[#241c13]/10 bg-[#fbf6ed] p-6 shadow-[0_16px_48px_rgba(36,28,19,0.06)]">
+                <div className="flex flex-wrap items-center gap-2">
+                  {study.context.versions.map((version) => (
+                    <button
+                      key={version.versionId}
+                      type="button"
+                      onClick={() => {
+                        onSelectVersion(version.versionId);
+                        setSelectionPrompt(null);
+                        setQuestionError(null);
+                      }}
+                      className={cn(
+                        "rounded-full px-4 py-1.5 text-sm transition",
+                        currentVersion?.versionId === version.versionId
+                          ? "bg-[#241c13] text-[#f8f2e8]"
+                          : "border border-[#241c13]/15 bg-[#fbf6ed] text-[#241c13]/75 hover:border-[#ae7a1a]/50 hover:text-[#ae7a1a]",
+                      )}
+                    >
+                      {version.versionId}
+                    </button>
+                  ))}
+                </div>
+
+                {currentVersion ? (
+                  <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
+                    <div className="relative">
+                      <div className="rounded-[1rem] bg-[#1a140c] px-5 py-4 text-[#f3ebdb]">
+                        <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#e6c87c]">
+                          {currentVersion.versionId}
+                        </div>
+                        <div className="font-display mt-1 text-2xl">
+                          {currentVersion.versionLabel}
+                        </div>
+                        <p className="mt-2 text-sm leading-7 text-[#e6dfcb]">
+                          {currentVersion.description}
+                        </p>
+                      </div>
+
+                      <div
+                        ref={readerRef}
+                        onMouseUp={onReaderMouseUp}
+                        className="relative mt-4 max-h-[46rem] overflow-y-auto rounded-[1rem] border border-[#241c13]/10 bg-[#fbf6ed] px-6 py-6"
+                      >
+                        <div className="space-y-4">
+                          {currentVersion.verses.map((verse, index) => (
+                            <p
+                              key={`${currentVersion.versionId}-${verse.verse}-${index}`}
+                              className="font-display text-lg leading-9 text-[#241c13]/90"
+                            >
+                              <span className="mr-3 align-top text-xs font-semibold text-[#ae7a1a]">
+                                {verse.verse}
+                              </span>
+                              {verse.text}
+                            </p>
+                          ))}
+                        </div>
+
+                        {selectionPrompt ? (
+                          <div
+                            onMouseUp={(event) => event.stopPropagation()}
+                            className="absolute z-20 w-[20rem] rounded-[1rem] border border-[#241c13]/15 bg-[#fbf6ed] p-4 shadow-[0_20px_50px_rgba(36,28,19,0.18)]"
+                            style={{
+                              top: selectionPrompt.top,
+                              left: selectionPrompt.left,
+                            }}
+                          >
+                            <Eyebrow>Selected text</Eyebrow>
+                            <p className="mt-2 line-clamp-4 text-sm leading-6 text-[#241c13]/80">
+                              {selectionPrompt.text}
+                            </p>
+                            <label className="mt-4 block text-sm font-medium text-[#241c13]">
+                              Ask about this section
+                            </label>
+                            <textarea
+                              value={selectionPrompt.question}
+                              onChange={(event) =>
+                                setSelectionPrompt((prev) =>
+                                  prev
+                                    ? { ...prev, question: event.target.value }
+                                    : prev,
+                                )
+                              }
+                              rows={4}
+                              placeholder="What does this section mean in context?"
+                              className="mt-2 w-full rounded-[0.75rem] border border-[#241c13]/15 bg-white px-3 py-2 text-sm leading-6 text-[#241c13] outline-none transition focus:border-[#ae7a1a]"
+                            />
+                            {questionError ? (
+                              <div className="mt-3 text-sm text-[#7a2e1c]">
+                                {questionError}
+                              </div>
+                            ) : null}
+                            <div className="mt-4 flex gap-2">
+                              <button
+                                type="button"
+                                onClick={onSubmitPassageQuestion}
+                                disabled={isAskingQuestion}
+                                className="rounded-full bg-[#241c13] px-4 py-1.5 text-sm text-[#f8f2e8] transition hover:bg-[#ae7a1a] disabled:cursor-not-allowed disabled:bg-[#241c13]/30"
+                              >
+                                {isAskingQuestion ? "Asking..." : "Ask GPT-5.4"}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectionPrompt(null);
+                                  setQuestionError(null);
+                                  window.getSelection()?.removeAllRanges();
+                                }}
+                                className="rounded-full border border-[#241c13]/15 px-4 py-1.5 text-sm text-[#241c13]/70 hover:text-[#241c13]"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+
+                    <div className="space-y-4">
+                      <Card label="Reader meta">
+                        <div className="space-y-2 text-sm text-[#241c13]/80">
+                          <div>
+                            <span className="text-[#241c13]/55">Attribution </span>
+                            {currentVersion.attribution}
+                          </div>
+                          <div>
+                            <span className="text-[#241c13]/55">Verses </span>
+                            {currentVersion.verses.length}
+                          </div>
+                          <div>
+                            <span className="text-[#241c13]/55">Source </span>
+                            <a
+                              href={currentVersion.sourceUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-[#ae7a1a] underline decoration-[#ae7a1a]/30 underline-offset-4"
+                            >
+                              Open
+                            </a>
+                          </div>
+                        </div>
+                      </Card>
+
+                      <Card label="Saved passage questions">
+                        {passageQuestions.length ? (
+                          <div className="space-y-3">
+                            {passageQuestions.map((entry) => (
+                              <div
+                                key={entry.id}
+                                className={cn(
+                                  "rounded-[1rem] border px-4 py-4",
+                                  selectedQuestionId === entry.id
+                                    ? "border-[#ae7a1a] bg-[#fbf6ed]"
+                                    : "border-[#241c13]/10 bg-[#f3ead8]/60",
+                                )}
+                              >
+                                <div className="flex items-center justify-between gap-3">
+                                  <div className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[#241c13]/55">
+                                    {entry.versionId}
+                                  </div>
+                                  <span
+                                    className={cn(
+                                      "rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.22em] ring-1",
+                                      confidenceTone(entry.confidence),
+                                    )}
+                                  >
+                                    {entry.confidence}
+                                  </span>
+                                </div>
+                                <p className="font-display mt-2 text-sm text-[#241c13]">
+                                  “{entry.selectionText}”
+                                </p>
+                                <p className="mt-2 text-sm leading-6 text-[#241c13]/80">
+                                  <span className="text-[#241c13]/55">Q </span>
+                                  {entry.question}
+                                </p>
+                                <p className="mt-2 text-sm leading-6 text-[#241c13]/80">
+                                  <span className="text-[#241c13]/55">A </span>
+                                  {entry.answer}
+                                </p>
+                                <p className="mt-2 text-xs leading-5 text-[#241c13]/55">
+                                  {entry.surroundingContext}
+                                </p>
+                                <div className="mt-2 text-[10px] uppercase tracking-[0.22em] text-[#241c13]/45">
+                                  {formatTimestamp(entry.createdAt)}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-[15px] leading-7 text-[#241c13]/70">
+                            Highlight text in the reader to save focused questions
+                            for this study.
+                          </p>
+                        )}
+                      </Card>
+                    </div>
+                  </div>
+                ) : null}
+              </section>
+            </div>
+          ) : null}
+
+          {activeView === "context" ? (
+            <div className="space-y-6">
+              <div>
+                <Eyebrow>Context pack</Eyebrow>
+                <h2 className="font-display mt-2 text-3xl text-[#241c13]">
+                  Historical, geographic, and literary frame
+                </h2>
+                <p className="mt-2 max-w-3xl text-[15px] leading-7 text-[#241c13]/75">
+                  The bundle fed to the analysts so the chapter is read as a full
+                  literary unit in its broader canonical context.
+                </p>
+              </div>
+              <ContextPack study={study} />
+            </div>
+          ) : null}
+
+          {activeView === "sources" ? (
+            <div className="space-y-6">
+              <div>
+                <Eyebrow>Sources</Eyebrow>
+                <h2 className="font-display mt-2 text-3xl text-[#241c13]">
+                  Providers and runtime notes
+                </h2>
+                <p className="mt-2 max-w-3xl text-[15px] leading-7 text-[#241c13]/75">
+                  Which providers served the text, which fallbacks were used,
+                  and which runtime warnings fired.
+                </p>
+              </div>
+              <SourcesView study={study} />
+            </div>
+          ) : null}
+        </section>
+      </div>
+    </div>
   );
 }
 
@@ -929,10 +2128,15 @@ export function StudyWorkbench({
   const router = useRouter();
   const pathname = usePathname();
   const readerRef = useRef<HTMLDivElement>(null);
+
+  const [phase, setPhase] = useState<Phase>(initialStudy ? "review" : "create");
   const [history, setHistory] = useState<StudyRunSummary[]>(initialHistory);
-  const [currentStudy, setCurrentStudy] = useState<ActiveStudy | null>(initialStudy);
-  const [passageQuestions, setPassageQuestions] =
-    useState<PersistedPassageQuestion[]>(initialPassageQuestions);
+  const [currentStudy, setCurrentStudy] = useState<ActiveStudy | null>(
+    initialStudy,
+  );
+  const [passageQuestions, setPassageQuestions] = useState<
+    PersistedPassageQuestion[]
+  >(initialPassageQuestions);
   const [activeView, setActiveView] = useState<ViewKey>("summary");
   const [selectedReportId, setSelectedReportId] = useState<string | null>(
     initialStudy?.reports[0]?.modelId ?? null,
@@ -950,74 +2154,35 @@ export function StudyWorkbench({
   const [runStatuses, setRunStatuses] = useState<Record<string, RunStatus>>(
     createDefaultRunStatuses(),
   );
-  const [narrationAutoplayToken, setNarrationAutoplayToken] = useState<string | null>(
-    initialStudy ? getNarrationAutoplayToken(initialStudy) : null,
+  const [narrationAutoplayToken, setNarrationAutoplayToken] = useState<
+    string | null
+  >(initialStudy ? getNarrationAutoplayToken(initialStudy) : null);
+  const [sortMode, setSortMode] = useState<BookSortMode>("order");
+  const [selectedOsis, setSelectedOsis] = useState<string>(
+    initialStudy?.context.parsedReference.book.osis ?? "",
   );
-  const initialReference = parseReferenceFromStudy(initialStudy);
-  const [bookQuery, setBookQuery] = useState(initialReference.bookName);
-  const [chapterValue, setChapterValue] = useState(initialReference.chapter);
-  const [focusQuestion, setFocusQuestion] = useState(initialReference.focusQuestion);
+  const [chapterValue, setChapterValue] = useState<string>(
+    initialStudy ? String(initialStudy.context.parsedReference.chapter) : "",
+  );
+  const [focusQuestion, setFocusQuestion] = useState<string>(
+    initialStudy?.request.focusQuestion ?? "",
+  );
   const [selectionPrompt, setSelectionPrompt] =
     useState<SelectionPromptState | null>(null);
 
-  const normalizedBookQuery = bookQuery.trim().toLowerCase();
-  const selectedBook =
-    books.find((book) => book.name.toLowerCase() === normalizedBookQuery) ?? null;
-  const currentVersion =
-    currentStudy?.context.versions.find((version) => version.versionId === selectedVersionId) ??
-    currentStudy?.context.versions[0] ??
-    null;
-  const selectedQuestionId = passageQuestions[0]?.id ?? null;
-  const bookSuggestions = useMemo(() => {
-    if (!normalizedBookQuery) {
-      return books.slice(0, 8);
-    }
+  const selectedBook = books.find((book) => book.osis === selectedOsis) ?? null;
+  const chapterNumber = Number(chapterValue);
+  const canSubmit =
+    !!selectedBook &&
+    Number.isInteger(chapterNumber) &&
+    chapterNumber > 0 &&
+    chapterNumber <= (selectedBook?.chapterCount ?? 0) &&
+    !isSubmitting &&
+    !isStreaming;
 
-    return books
-      .filter((book) => book.name.toLowerCase().includes(normalizedBookQuery))
-      .slice(0, 8);
-  }, [normalizedBookQuery]);
-  const chapterSuggestions = useMemo(() => {
-    if (!selectedBook) {
-      return [];
-    }
-
-    return Array.from({ length: selectedBook.chapterCount }, (_, index) =>
-      String(index + 1),
-    );
-  }, [selectedBook]);
-  const historyItems = useMemo<AnimatedListItem[]>(
-    () =>
-      history.map((study) => ({
-        id: study.id,
-        content: (
-          <Link href={`/studies/${study.slug}`} className="block">
-            <div className="space-y-2">
-              <div className="flex items-center justify-between gap-3">
-                <div className="text-sm font-semibold text-slate-950">
-                  {study.reference}
-                </div>
-                <span
-                  className={cn(
-                    "rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] ring-1",
-                    confidenceTone(study.confidence),
-                  )}
-                >
-                  {study.confidence}
-                </span>
-              </div>
-              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                {formatTimestamp(study.createdAt)}
-              </div>
-              <p className="line-clamp-3 text-sm leading-6 text-slate-700">
-                {study.finalThesis}
-              </p>
-            </div>
-          </Link>
-        ),
-      })),
-    [history],
-  );
+  const runningReference = selectedBook
+    ? `${selectedBook.name} ${chapterValue}`
+    : "";
 
   function appendConsoleLine(line: string) {
     setConsoleLogs((previous) => [
@@ -1066,11 +2231,14 @@ export function StudyWorkbench({
       setNarrationAutoplayToken(getNarrationAutoplayToken(study));
       setPassageQuestions([]);
       setSelectedReportId(study.reports[0]?.modelId ?? null);
-      setSelectedVersionId(study.context.versions[0]?.versionId ?? DEFAULT_VERSION_IDS[0]);
+      setSelectedVersionId(
+        study.context.versions[0]?.versionId ?? DEFAULT_VERSION_IDS[0],
+      );
       setActiveView("summary");
       setCopyState("idle");
       setQuestionError(null);
       setError(null);
+      setPhase("review");
 
       if (hasSlug(study)) {
         setHistory((previous) => {
@@ -1092,6 +2260,7 @@ export function StudyWorkbench({
     if (event.type === "error") {
       setError(event.message);
       setIsStreaming(false);
+      setPhase("create");
       appendConsoleLine(
         `[${formatConsoleTime(event.timestamp)}] [error] ${event.message}`,
       );
@@ -1112,31 +2281,33 @@ export function StudyWorkbench({
     setQuestionError(null);
     setSelectionPrompt(null);
 
-    const nextBook =
-      books.find((book) => book.name.toLowerCase() === normalizedBookQuery) ?? null;
-
-    if (!nextBook) {
-      setError("Choose a valid New Testament book from the suggestions.");
+    if (!selectedBook) {
+      setError("Choose a book.");
       return;
     }
 
     const chapter = Number(chapterValue);
 
-    if (!Number.isInteger(chapter) || chapter <= 0 || chapter > nextBook.chapterCount) {
+    if (
+      !Number.isInteger(chapter) ||
+      chapter <= 0 ||
+      chapter > selectedBook.chapterCount
+    ) {
       setError(
-        `Choose a chapter between 1 and ${nextBook.chapterCount} for ${nextBook.name}.`,
+        `Choose a chapter between 1 and ${selectedBook.chapterCount} for ${selectedBook.name}.`,
       );
       return;
     }
 
     setIsSubmitting(true);
     setIsStreaming(true);
+    setPhase("running");
     setConsoleLogs([]);
     setRunStatuses(createDefaultRunStatuses());
     setNarrationAutoplayToken(null);
 
     try {
-      const reference = `${nextBook.name} ${chapter}`;
+      const reference = `${selectedBook.name} ${chapter}`;
       const response = await fetch("/api/study/stream", {
         method: "POST",
         headers: {
@@ -1190,6 +2361,7 @@ export function StudyWorkbench({
           : "The study request failed.",
       );
       setIsStreaming(false);
+      setPhase("create");
     } finally {
       setIsSubmitting(false);
     }
@@ -1255,7 +2427,20 @@ export function StudyWorkbench({
   }
 
   async function submitPassageQuestion() {
-    if (!currentStudy || !currentVersion || !hasSlug(currentStudy) || !selectionPrompt) {
+    if (
+      !currentStudy ||
+      !hasSlug(currentStudy) ||
+      !selectionPrompt
+    ) {
+      return;
+    }
+
+    const version =
+      currentStudy.context.versions.find(
+        (v) => v.versionId === selectedVersionId,
+      ) ?? currentStudy.context.versions[0];
+
+    if (!version) {
       return;
     }
 
@@ -1275,7 +2460,7 @@ export function StudyWorkbench({
         },
         body: JSON.stringify({
           studyId: currentStudy.id,
-          versionId: currentVersion.versionId,
+          versionId: version.versionId,
           selectionText: selectionPrompt.text,
           question: selectionPrompt.question,
         }),
@@ -1310,507 +2495,104 @@ export function StudyWorkbench({
     }
   }
 
+  function onStartNewStudy() {
+    if (pathname !== "/") {
+      router.push("/");
+      return;
+    }
+    setCurrentStudy(null);
+    setPhase("create");
+    setSelectedOsis("");
+    setChapterValue("");
+    setFocusQuestion("");
+    setError(null);
+  }
+
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(125,211,252,0.18),transparent_24%),radial-gradient(circle_at_bottom_right,rgba(251,191,36,0.18),transparent_24%),linear-gradient(180deg,#f8fafc_0%,#eff6ff_46%,#f8fafc_100%)]">
-      <div className="mx-auto grid min-h-screen max-w-[104rem] gap-6 px-4 py-6 lg:grid-cols-[22rem_minmax(0,1fr)] lg:px-6 lg:py-8">
-        <aside className="space-y-6">
-          <section className="rounded-[2rem] border border-sky-200/70 bg-white/85 p-6 shadow-[0_20px_70px_rgba(14,30,62,0.08)] backdrop-blur">
-            <div className="inline-flex rounded-full bg-sky-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] text-sky-900">
-              New Testament Study Agents
-            </div>
-            <div className="mt-5 max-w-sm">
-              <StaggeredText
-                as="h1"
-                text="Study a New Testament chapter with a live multi-agent workspace."
-                className="font-display text-4xl leading-tight text-slate-950"
-                delay={28}
-                duration={0.45}
-                segmentBy="words"
-                blur={false}
-              />
-            </div>
-            <p className="mt-4 text-sm leading-7 text-slate-700">
-              Five translations, adjacent chapter context, live agent activity,
-              saved passage questions, and slug-based study retrieval.
-            </p>
-          </section>
+    <AnimatePresence mode="wait">
+      {phase === "create" ? (
+        <motion.main
+          key="create"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.2 }}
+        >
+          <CreateStudyView
+            selectedOsis={selectedOsis}
+            onSelectBook={setSelectedOsis}
+            sortMode={sortMode}
+            onSortModeChange={setSortMode}
+            chapterValue={chapterValue}
+            onChapterChange={setChapterValue}
+            focusQuestion={focusQuestion}
+            onFocusChange={setFocusQuestion}
+            onSubmit={onSubmit}
+            canSubmit={canSubmit}
+            isSubmitting={isSubmitting}
+            error={error}
+            history={history}
+          />
+        </motion.main>
+      ) : null}
 
-          <section className="rounded-[2rem] border border-slate-200 bg-white/90 p-6 shadow-[0_20px_70px_rgba(15,23,42,0.08)]">
-            <div className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">
-              Launch A Study
-            </div>
-            <form className="mt-5 space-y-5" onSubmit={onSubmit}>
-              <div>
-                <label className="text-sm font-semibold text-slate-800" htmlFor="book">
-                  Book
-                </label>
-                <input
-                  id="book"
-                  list="book-suggestions"
-                  value={bookQuery}
-                  onChange={(event) => setBookQuery(event.target.value)}
-                  placeholder="Start typing John, Romans, Matthew..."
-                  className="mt-2 w-full rounded-[1.15rem] border border-slate-200 bg-slate-50 px-4 py-3 text-base text-slate-900 outline-none transition focus:border-sky-400 focus:bg-white"
-                />
-                <datalist id="book-suggestions">
-                  {books.map((book) => (
-                    <option key={book.osis} value={book.name} />
-                  ))}
-                </datalist>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {bookSuggestions.map((book) => (
-                    <button
-                      key={book.osis}
-                      type="button"
-                      onClick={() => {
-                        setBookQuery(book.name);
-                        setChapterValue("1");
-                      }}
-                      className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 hover:border-sky-300 hover:text-sky-900"
-                    >
-                      {book.name}
-                    </button>
-                  ))}
-                </div>
-              </div>
+      {phase === "running" ? (
+        <motion.main
+          key="running"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.2 }}
+        >
+          <RunningStudyView
+            reference={runningReference}
+            focusQuestion={focusQuestion || null}
+            logs={consoleLogs}
+            statuses={runStatuses}
+            isStreaming={isStreaming}
+            error={error}
+            onCancelToCreate={() => {
+              setIsStreaming(false);
+              setPhase("create");
+            }}
+          />
+        </motion.main>
+      ) : null}
 
-              <div>
-                <label className="text-sm font-semibold text-slate-800" htmlFor="chapter">
-                  Chapter
-                </label>
-                <input
-                  id="chapter"
-                  list="chapter-suggestions"
-                  inputMode="numeric"
-                  value={chapterValue}
-                  onChange={(event) => setChapterValue(event.target.value)}
-                  placeholder={selectedBook ? `1-${selectedBook.chapterCount}` : "Pick a book first"}
-                  disabled={!selectedBook}
-                  className="mt-2 w-full rounded-[1.15rem] border border-slate-200 bg-slate-50 px-4 py-3 text-base text-slate-900 outline-none transition focus:border-sky-400 focus:bg-white disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
-                />
-                <datalist id="chapter-suggestions">
-                  {chapterSuggestions.map((chapter) => (
-                    <option key={chapter} value={chapter} />
-                  ))}
-                </datalist>
-                {selectedBook ? (
-                  <p className="mt-2 text-xs uppercase tracking-[0.18em] text-slate-500">
-                    {selectedBook.chapterCount} chapters available
-                  </p>
-                ) : null}
-              </div>
-
-              <div>
-                <label className="text-sm font-semibold text-slate-800" htmlFor="focusQuestion">
-                  Focus question
-                </label>
-                <textarea
-                  id="focusQuestion"
-                  value={focusQuestion}
-                  onChange={(event) => setFocusQuestion(event.target.value)}
-                  rows={4}
-                  placeholder="Optional: What is this chapter teaching about discipleship, kingdom, suffering, witness..."
-                  className="mt-2 w-full rounded-[1.15rem] border border-slate-200 bg-slate-50 px-4 py-3 text-base text-slate-900 outline-none transition focus:border-sky-400 focus:bg-white"
-                />
-              </div>
-
-              <div className="rounded-[1.3rem] bg-slate-950 px-4 py-4 text-slate-100">
-                <div className="text-xs font-semibold uppercase tracking-[0.2em] text-sky-200/80">
-                  Default Translation Stack
-                </div>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {DEFAULT_VERSION_IDS.map((version) => (
-                    <span
-                      key={version}
-                      className="rounded-full bg-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-slate-100"
-                    >
-                      {version}
-                    </span>
-                  ))}
-                </div>
-              </div>
-
-              <button
-                type="submit"
-                disabled={isSubmitting || isStreaming}
-                className="inline-flex w-full items-center justify-center rounded-[1.2rem] bg-sky-900 px-5 py-3 text-sm font-semibold uppercase tracking-[0.18em] text-white shadow-[0_18px_36px_rgba(8,47,73,0.25)] transition hover:bg-sky-800 disabled:cursor-not-allowed disabled:bg-slate-400"
-              >
-                {isSubmitting || isStreaming ? "Running study..." : "Run study"}
-              </button>
-            </form>
-
-            {error ? (
-              <div className="mt-4 rounded-[1.2rem] border border-rose-200 bg-rose-50 px-4 py-3 text-sm leading-7 text-rose-900">
-                {error}
-              </div>
-            ) : null}
-          </section>
-
-          <section className="rounded-[2rem] border border-slate-200 bg-white/90 p-6 shadow-[0_20px_70px_rgba(15,23,42,0.08)]">
-            <div className="flex items-center justify-between gap-3">
-              <div className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">
-                Recent Studies
-              </div>
-              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
-                {history.length}
-              </span>
-            </div>
-
-            <div className="mt-5">
-              {history.length ? (
-                <AnimatedList
-                  items={historyItems}
-                  autoAddDelay={0}
-                  animationType="slide"
-                  enterFrom="top"
-                  hoverEffect="scale"
-                  fadeEdges={false}
-                  className="!bg-transparent"
-                  height="520px"
-                />
-              ) : (
-                <div className="rounded-[1.4rem] border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-sm leading-7 text-slate-600">
-                  Completed studies will appear here as soon as they’ve been saved.
-                </div>
-              )}
-            </div>
-          </section>
-        </aside>
-
-        <section className="space-y-6">
-          {isStreaming ? (
-            <TerminalConsole
-              logs={consoleLogs}
-              statuses={runStatuses}
-              isStreaming={isStreaming}
-            />
-          ) : null}
-
-          {currentStudy ? (
-            <>
-              <section className="rounded-[2rem] border border-slate-200 bg-white/85 p-6 shadow-[0_20px_80px_rgba(15,23,42,0.08)]">
-                <div className="flex flex-wrap items-start justify-between gap-4">
-                  <div>
-                    <div className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">
-                      Active Study
-                    </div>
-                    <h1 className="font-display mt-3 text-5xl leading-tight text-slate-950">
-                      {currentStudy.context.parsedReference.reference}
-                    </h1>
-                    <p className="mt-3 max-w-3xl text-sm leading-7 text-slate-700">
-                      {currentStudy.request.focusQuestion
-                        ? currentStudy.request.focusQuestion
-                        : currentStudy.context.parsedReference.book.summary}
-                    </p>
-                  </div>
-                  <div className="rounded-[1.4rem] border border-slate-200 bg-slate-50 px-4 py-4">
-                    <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                      Study Meta
-                    </div>
-                    <div className="mt-3 space-y-2 text-sm text-slate-700">
-                      {hasSlug(currentStudy) ? (
-                        <div>
-                          <span className="font-semibold text-slate-900">ID:</span>{" "}
-                          {currentStudy.id.slice(0, 8)}
-                        </div>
-                      ) : null}
-                      <div>
-                        <span className="font-semibold text-slate-900">Generated:</span>{" "}
-                        {formatTimestamp(currentStudy.generatedAt)}
-                      </div>
-                      <div>
-                        <span className="font-semibold text-slate-900">Versions:</span>{" "}
-                        {currentStudy.context.versions
-                          .map((version) => version.versionId)
-                          .join(", ")}
-                      </div>
-                      {copyState === "copied" ? (
-                        <div className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">
-                          Link copied
-                        </div>
-                      ) : null}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="mt-6 flex flex-wrap gap-3">
-                  {viewOptions.map((option) => (
-                    <button
-                      key={option.key}
-                      type="button"
-                      onClick={() => setActiveView(option.key)}
-                      className={cn(
-                        "rounded-full px-4 py-2 text-sm font-semibold transition",
-                        activeView === option.key
-                          ? "bg-slate-950 text-white shadow-[0_14px_30px_rgba(15,23,42,0.18)]"
-                          : "border border-slate-200 bg-white text-slate-700 hover:border-sky-300 hover:text-sky-800",
-                      )}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
-                </div>
-              </section>
-
-              {activeView === "summary" ? (
-                <FinalSummaryView
-                  study={currentStudy}
-                  onCopyLink={onCopyLink}
-                  narrationAutoplayToken={narrationAutoplayToken}
-                  onNarrationAutoplayHandled={() => setNarrationAutoplayToken(null)}
-                />
-              ) : null}
-
-              {activeView === "analysts" ? (
-                <AnalystView
-                  study={currentStudy}
-                  selectedReportId={selectedReportId}
-                  onSelectReport={setSelectedReportId}
-                />
-              ) : null}
-
-              {activeView === "reader" ? (
-                <div className="space-y-6">
-                  <SectionTitle
-                    eyebrow="Chapter Reader"
-                    title="Read one translation at a time and ask targeted questions."
-                    body="Highlight any portion of the displayed chapter to open a focused GPT-5.4 question box. Each answer is stored with the study for later review."
-                  />
-
-                  <section className="rounded-[2rem] border border-slate-200 bg-white/90 p-6 shadow-[0_20px_70px_rgba(15,23,42,0.08)]">
-                    <div className="flex flex-wrap items-center gap-3">
-                      {currentStudy.context.versions.map((version) => (
-                        <button
-                          key={version.versionId}
-                          type="button"
-                          onClick={() => {
-                            setSelectedVersionId(version.versionId);
-                            setSelectionPrompt(null);
-                            setQuestionError(null);
-                          }}
-                          className={cn(
-                            "rounded-full px-4 py-2 text-sm font-semibold transition",
-                            currentVersion?.versionId === version.versionId
-                              ? "bg-sky-900 text-white shadow-[0_12px_32px_rgba(8,47,73,0.22)]"
-                              : "border border-slate-200 bg-white text-slate-700 hover:border-sky-300 hover:text-sky-800",
-                          )}
-                        >
-                          {version.versionId}
-                        </button>
-                      ))}
-                    </div>
-
-                    {currentVersion ? (
-                      <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
-                        <div className="relative">
-                          <div className="rounded-[1.4rem] bg-slate-950 px-5 py-4 text-slate-100">
-                            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-200/80">
-                              {currentVersion.versionId}
-                            </div>
-                            <div className="mt-2 text-2xl font-semibold">
-                              {currentVersion.versionLabel}
-                            </div>
-                            <p className="mt-2 text-sm leading-7 text-slate-300">
-                              {currentVersion.description}
-                            </p>
-                          </div>
-
-                          <div
-                            ref={readerRef}
-                            onMouseUp={onReaderMouseUp}
-                            className="relative mt-4 max-h-[46rem] overflow-y-auto rounded-[1.6rem] border border-slate-200 bg-white px-6 py-6 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]"
-                          >
-                            <div className="space-y-5">
-                              {currentVersion.verses.map((verse, index) => (
-                                <p
-                                  key={`${currentVersion.versionId}-${verse.verse}-${index}`}
-                                  className="text-lg leading-9 text-slate-800"
-                                >
-                                  <span className="mr-3 align-top text-sm font-semibold uppercase tracking-[0.16em] text-sky-800">
-                                    {verse.verse}
-                                  </span>
-                                  {verse.text}
-                                </p>
-                              ))}
-                            </div>
-
-	                            {selectionPrompt ? (
-	                              <div
-	                                onMouseUp={(event) => event.stopPropagation()}
-	                                className="absolute z-20 w-[20rem] rounded-[1.25rem] border border-slate-200 bg-white p-4 shadow-[0_20px_50px_rgba(15,23,42,0.16)]"
-	                                style={{
-	                                  top: selectionPrompt.top,
-                                  left: selectionPrompt.left,
-                                }}
-                              >
-                                <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                                  Selected Text
-                                </div>
-                                <p className="mt-2 line-clamp-4 text-sm leading-7 text-slate-700">
-                                  {selectionPrompt.text}
-                                </p>
-                                <label className="mt-4 block text-sm font-semibold text-slate-800">
-                                  Ask about this section
-                                </label>
-                                <textarea
-                                  value={selectionPrompt.question}
-                                  onChange={(event) =>
-                                    setSelectionPrompt((previous) =>
-                                      previous
-                                        ? { ...previous, question: event.target.value }
-                                        : previous,
-                                    )
-                                  }
-                                  rows={4}
-                                  placeholder="What does this section mean in context?"
-                                  className="mt-2 w-full rounded-[1rem] border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-900 outline-none transition focus:border-sky-400 focus:bg-white"
-                                />
-                                {questionError ? (
-                                  <div className="mt-3 text-sm text-rose-700">
-                                    {questionError}
-                                  </div>
-                                ) : null}
-                                <div className="mt-4 flex gap-2">
-                                  <button
-                                    type="button"
-                                    onClick={submitPassageQuestion}
-                                    disabled={isAskingQuestion}
-                                    className="rounded-full bg-sky-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-sky-800 disabled:cursor-not-allowed disabled:bg-slate-400"
-                                  >
-                                    {isAskingQuestion ? "Asking..." : "Ask GPT-5.4"}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setSelectionPrompt(null);
-                                      setQuestionError(null);
-                                      window.getSelection()?.removeAllRanges();
-                                    }}
-                                    className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700"
-                                  >
-                                    Cancel
-                                  </button>
-                                </div>
-                              </div>
-                            ) : null}
-                          </div>
-                        </div>
-
-                        <div className="space-y-4">
-                          <SummaryCard label="Reader Meta">
-                            <div className="space-y-2 text-sm text-slate-700">
-                              <div>
-                                <span className="font-semibold text-slate-900">Attribution:</span>{" "}
-                                {currentVersion.attribution}
-                              </div>
-                              <div>
-                                <span className="font-semibold text-slate-900">Verses:</span>{" "}
-                                {currentVersion.verses.length}
-                              </div>
-                              <div>
-                                <span className="font-semibold text-slate-900">Source:</span>{" "}
-                                <a
-                                  href={currentVersion.sourceUrl}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="text-sky-800 underline decoration-sky-300 underline-offset-4"
-                                >
-                                  Open source page
-                                </a>
-                              </div>
-                            </div>
-                          </SummaryCard>
-
-                          <SummaryCard label="Saved Passage Questions">
-                            {passageQuestions.length ? (
-                              <div className="space-y-3">
-                                {passageQuestions.map((entry) => (
-                                  <div
-                                    key={entry.id}
-                                    className={cn(
-                                      "rounded-[1.3rem] border px-4 py-4",
-                                      selectedQuestionId === entry.id
-                                        ? "border-sky-300 bg-sky-50/70"
-                                        : "border-slate-200 bg-slate-50",
-                                    )}
-                                  >
-                                    <div className="flex items-center justify-between gap-3">
-                                      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                                        {entry.versionId}
-                                      </div>
-                                      <span
-                                        className={cn(
-                                          "rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] ring-1",
-                                          confidenceTone(entry.confidence),
-                                        )}
-                                      >
-                                        {entry.confidence}
-                                      </span>
-                                    </div>
-                                    <p className="mt-2 text-sm font-medium text-slate-900">
-                                      “{entry.selectionText}”
-                                    </p>
-                                    <p className="mt-2 text-sm leading-7 text-slate-700">
-                                      <span className="font-semibold text-slate-900">
-                                        Q:
-                                      </span>{" "}
-                                      {entry.question}
-                                    </p>
-                                    <p className="mt-2 text-sm leading-7 text-slate-700">
-                                      <span className="font-semibold text-slate-900">
-                                        A:
-                                      </span>{" "}
-                                      {entry.answer}
-                                    </p>
-                                    <p className="mt-2 text-xs leading-6 text-slate-500">
-                                      {entry.surroundingContext}
-                                    </p>
-                                    <div className="mt-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                                      {formatTimestamp(entry.createdAt)}
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            ) : (
-                              <p className="text-sm leading-7 text-slate-700">
-                                Highlight text in the reader to save focused passage questions for this study.
-                              </p>
-                            )}
-                          </SummaryCard>
-                        </div>
-                      </div>
-                    ) : null}
-                  </section>
-                </div>
-              ) : null}
-
-              {activeView === "context" ? (
-                <div className="space-y-6">
-                  <SectionTitle
-                    eyebrow="Context Pack"
-                    title="Historical, geographic, and adjacent chapter frame"
-                    body="This bundle feeds the analysts so the chapter is studied as a full literary unit inside its immediate New Testament context."
-                  />
-                  <ContextPack study={currentStudy} />
-                </div>
-              ) : null}
-
-              {activeView === "sources" ? (
-                <div className="space-y-6">
-                  <SectionTitle
-                    eyebrow="Sources"
-                    title="Inspect providers and runtime notes"
-                    body="This view surfaces which providers served the text, what fallbacks were used, and which runtime warnings were generated."
-                  />
-                  <SourcesView study={currentStudy} />
-                </div>
-              ) : null}
-            </>
-          ) : (
-            <EmptyState />
-          )}
-        </section>
-      </div>
-    </main>
+      {phase === "review" && currentStudy ? (
+        <motion.main
+          key="review"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.2 }}
+        >
+          <ReviewStudyView
+            study={currentStudy}
+            history={history}
+            passageQuestions={passageQuestions}
+            activeView={activeView}
+            onSetView={setActiveView}
+            selectedReportId={selectedReportId}
+            onSelectReport={setSelectedReportId}
+            selectedVersionId={selectedVersionId}
+            onSelectVersion={setSelectedVersionId}
+            copyState={copyState}
+            onCopyLink={onCopyLink}
+            narrationAutoplayToken={narrationAutoplayToken}
+            onNarrationAutoplayHandled={() => setNarrationAutoplayToken(null)}
+            selectionPrompt={selectionPrompt}
+            setSelectionPrompt={setSelectionPrompt}
+            questionError={questionError}
+            setQuestionError={setQuestionError}
+            readerRef={readerRef}
+            onReaderMouseUp={onReaderMouseUp}
+            onSubmitPassageQuestion={submitPassageQuestion}
+            isAskingQuestion={isAskingQuestion}
+            onStartNewStudy={onStartNewStudy}
+          />
+        </motion.main>
+      ) : null}
+    </AnimatePresence>
   );
 }

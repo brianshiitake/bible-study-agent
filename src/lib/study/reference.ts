@@ -25,7 +25,9 @@ export function parseChapterReference(rawReference: string): ParsedReference {
   const parts = osis.split(".");
 
   if (parts.length !== 2) {
-    throw new Error("Choose a chapter reference like \"Romans 8\".");
+    throw new Error(
+      'Choose a chapter reference like "Romans 8" or "Genesis 1".',
+    );
   }
 
   const [bookOsis, chapterText] = parts;
@@ -37,12 +39,6 @@ export function parseChapterReference(rawReference: string): ParsedReference {
 
   const book = getBookMetadata(bookOsis);
   const chapterCount = getBookChapterCount(bookOsis);
-
-  if (book.testament !== "New Testament") {
-    throw new Error(
-      `${book.name} is outside the scope of this project. Choose a New Testament chapter.`,
-    );
-  }
 
   if (chapter > chapterCount) {
     throw new Error(
