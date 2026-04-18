@@ -242,9 +242,11 @@ async function emitLog(
   });
 }
 
+const ANALYST_SKIP_MESSAGE = "Model output malformed.. skipping.";
+
 function buildFailureReport(
   modelConfig: StudyModelConfig,
-  message: string,
+  _message: string,
 ): AnalystReport {
   return analystReportSchema.parse({
     modelId: modelConfig.id,
@@ -266,13 +268,13 @@ function buildFailureReport(
         verseRange: "Unavailable",
         versions: ["Unavailable", "Unavailable"],
         observation: "This analyst did not return translation comparison data.",
-        significance: message,
+        significance: ANALYST_SKIP_MESSAGE,
       },
     ],
     crossReferences: [
       {
         reference: "Retry required",
-        relevance: message,
+        relevance: ANALYST_SKIP_MESSAGE,
       },
       {
         reference: "Fallback to remaining analysts",
@@ -290,7 +292,7 @@ function buildFailureReport(
       "Review the other model outputs first.",
       "Retry the failed model once the configuration issue is resolved.",
     ],
-    cautions: [message],
+    cautions: [ANALYST_SKIP_MESSAGE],
     confidence: "low",
     sourcesUsed: ["Runtime failure placeholder"],
   });
@@ -366,7 +368,7 @@ export async function runAnalystAgent(
       modelConfig.id,
       modelConfig.label,
       "failed",
-      message,
+      ANALYST_SKIP_MESSAGE,
     );
 
     return buildFailureReport(modelConfig, message);
