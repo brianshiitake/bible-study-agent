@@ -48,14 +48,81 @@ function normalizeConnectionString(connectionString: string) {
   }
 }
 
-function getConnectionString() {
-  const connectionString = process.env.SUPABASE_CONNECTION_STRING;
+function parseConnectionString(connectionString: string) {
+  try {
+    return new URL(connectionString);
+  } catch {
+    return null;
+  }
+}
 
-  return connectionString ? normalizeConnectionString(connectionString) : undefined;
+function getInvalidConnectionStringMessage(connectionString: string) {
+  return [
+    "SUPABASE_CONNECTION_STRING is not a valid Postgres connection string.",
+    "Copy the exact connection string from Supabase Connect and paste it into Vercel without editing it by hand.",
+    `Received: ${connectionString}`,
+  ].join(" ");
+}
+
+function getSupabaseVercelPoolerMessage(hostname: string) {
+  return [
+    `SUPABASE_CONNECTION_STRING points at Supabase's direct database host (${hostname}:5432), which is not supported on Vercel.`,
+    "Vercel does not support Supabase's default IPv6-only direct Postgres connection.",
+    "In Supabase, open Connect and copy the Transaction pooler connection string instead, then update Vercel and redeploy.",
+  ].join(" ");
+}
+
+function getConnectionIssue(connectionString: string) {
+  const parsed = parseConnectionString(connectionString);
+
+  if (!parsed) {
+    return getInvalidConnectionStringMessage(connectionString);
+  }
+
+  const isSupabaseDirectHost = /^db\.[^.]+\.supabase\.co$/i.test(parsed.hostname);
+  const port = parsed.port || (parsed.protocol === "postgresql:" ? "5432" : "");
+
+  if (process.env.VERCEL && isSupabaseDirectHost && port === "5432") {
+    return getSupabaseVercelPoolerMessage(parsed.hostname);
+  }
+
+  return null;
+}
+
+function getConnectionString() {
+  const rawConnectionString = process.env.SUPABASE_CONNECTION_STRING;
+
+  if (!rawConnectionString) {
+    return undefined;
+  }
+
+  const normalizedConnectionString = normalizeConnectionString(rawConnectionString);
+  const issue = getConnectionIssue(normalizedConnectionString);
+
+  if (issue) {
+    throw new Error(issue);
+  }
+
+  return normalizedConnectionString;
+}
+
+export function getDatabaseConnectionIssue() {
+  try {
+    getConnectionString();
+    return null;
+  } catch (error) {
+    return error instanceof Error
+      ? error.message
+      : "The database connection is not configured correctly.";
+  }
 }
 
 export function hasDatabaseConnection() {
-  return Boolean(getConnectionString());
+  try {
+    return Boolean(getConnectionString());
+  } catch {
+    return false;
+  }
 }
 
 export function getSql() {

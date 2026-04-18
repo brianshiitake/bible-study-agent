@@ -1,13 +1,24 @@
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
+import { getDatabaseConnectionIssue } from "@/lib/db";
 import { runStudyGraph } from "@/lib/study/graph";
 import { createTimestamp } from "@/lib/study/events";
 import { canPersistStudies, persistStudyResult } from "@/lib/study/persistence";
-import { studyRequestSchema } from "@/lib/study/schemas";
+import {
+  studyRequestSchema,
+  type StudyResult,
+} from "@/lib/study/schemas";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
+
+function addStudyWarning(study: StudyResult, warning: string) {
+  return {
+    ...study,
+    warnings: Array.from(new Set([...study.warnings, warning])),
+  };
+}
 
 export async function POST(request: Request) {
   try {
@@ -25,9 +36,61 @@ export async function POST(request: Request) {
             const result = await runStudyGraph(body, {
               onEvent: async (event) => send(event),
             });
-            const persisted = canPersistStudies()
-              ? await persistStudyResult(result)
-              : null;
+            const databaseIssue = getDatabaseConnectionIssue();
+
+            if (databaseIssue) {
+              send({
+                type: "log",
+                scope: "system",
+                target: "persistence",
+                label: "Persistence",
+                message: databaseIssue,
+                timestamp: createTimestamp(),
+              });
+              send({
+                type: "result",
+                study: addStudyWarning(result, databaseIssue),
+              });
+              send({
+                type: "complete",
+                timestamp: createTimestamp(),
+              });
+              controller.close();
+              return;
+            }
+
+            let persisted = null;
+
+            try {
+              persisted = canPersistStudies()
+                ? await persistStudyResult(result)
+                : null;
+            } catch (error) {
+              const message =
+                error instanceof Error
+                  ? error.message
+                  : "Study persistence failed after the study completed.";
+
+              console.error("Study persistence failed after a completed run.", error);
+              send({
+                type: "log",
+                scope: "system",
+                target: "persistence",
+                label: "Persistence",
+                message,
+                timestamp: createTimestamp(),
+              });
+              send({
+                type: "result",
+                study: addStudyWarning(result, message),
+              });
+              send({
+                type: "complete",
+                timestamp: createTimestamp(),
+              });
+              controller.close();
+              return;
+            }
 
             send({
               type: "result",
