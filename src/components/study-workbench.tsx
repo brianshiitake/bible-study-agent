@@ -1353,13 +1353,13 @@ function CreateStudyView({
           <div className="mb-12">
             <Eyebrow>Open a study</Eyebrow>
             <h1 className="font-display mt-3 text-[2.75rem] leading-[1.05] text-[#241c13] md:text-[3.25rem]">
-              Pick a chapter to open
+              Make a choice
               <br />
-              <span className="text-[#ae7a1a]">to the agents.</span>
+              <span className="text-[#ae7a1a]">and start your session.</span>
             </h1>
             <p className="mt-5 max-w-xl text-[17px] leading-8 text-[#241c13]/75">
-              Five translations, adjacent chapter context, four model readings,
-              and one final synthesis. You choose the focus.
+              Choose the book, choose a chapter, and spawn multiple agents to
+              explore deep research and insights based on biblical history
             </p>
           </div>
 
