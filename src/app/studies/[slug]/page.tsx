@@ -16,21 +16,29 @@ type StudyPageProps = {
 
 export default async function StudyPage({ params }: StudyPageProps) {
   const { slug } = await params;
-  const [study, recentStudies] = await Promise.all([
-    getStudyRunBySlug(slug),
-    listRecentStudyRuns(),
-  ]);
+  const study = await getStudyRunBySlug(slug);
 
   if (!study) {
     notFound();
   }
+
+  const [recentStudies, passageQuestions] = await Promise.all([
+    listRecentStudyRuns().catch((error) => {
+      console.error("Failed to load recent studies for a study page.", error);
+      return [];
+    }),
+    listStudyPassageQuestions(study.id).catch((error) => {
+      console.error("Failed to load saved passage questions.", error);
+      return [];
+    }),
+  ]);
 
   return (
     <StudyWorkbench
       key={study.slug}
       initialHistory={recentStudies}
       initialStudy={study}
-      initialPassageQuestions={await listStudyPassageQuestions(study.id)}
+      initialPassageQuestions={passageQuestions}
     />
   );
 }

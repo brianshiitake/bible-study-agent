@@ -1,5 +1,4 @@
 import postgres from "postgres";
-import { getEnv } from "@/lib/env";
 
 let sqlClient: postgres.Sql | null = null;
 let schemaReadyPromise: Promise<void> | null = null;
@@ -50,7 +49,7 @@ function normalizeConnectionString(connectionString: string) {
 }
 
 function getConnectionString() {
-  const connectionString = getEnv().SUPABASE_CONNECTION_STRING;
+  const connectionString = process.env.SUPABASE_CONNECTION_STRING;
 
   return connectionString ? normalizeConnectionString(connectionString) : undefined;
 }

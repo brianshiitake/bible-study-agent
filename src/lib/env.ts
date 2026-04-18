@@ -9,6 +9,7 @@ const envSchema = z.object({
   RAPIDAPI_KEY: z.string().optional(),
   SUPABASE_CONNECTION_STRING: z.string().optional(),
   RAPIDAPI_COMPLETE_STUDY_BIBLE_HOST: z.string().optional(),
+  WEBSITE_PASSWORD: z.string().optional(),
   STUDY_MODEL_GPT: z.string().default("openai/gpt-5.4"),
   STUDY_MODEL_OPUS: z.string().default("anthropic/claude-opus-4.6"),
   STUDY_MODEL_GEMINI: z.string().default("google/gemini-3.1-pro-preview"),
@@ -35,6 +36,7 @@ export function getEnv(): AppEnv {
     SUPABASE_CONNECTION_STRING: process.env.SUPABASE_CONNECTION_STRING,
     RAPIDAPI_COMPLETE_STUDY_BIBLE_HOST:
       process.env.RAPIDAPI_COMPLETE_STUDY_BIBLE_HOST,
+    WEBSITE_PASSWORD: process.env.WEBSITE_PASSWORD,
     STUDY_MODEL_GPT: process.env.STUDY_MODEL_GPT,
     STUDY_MODEL_OPUS: process.env.STUDY_MODEL_OPUS,
     STUDY_MODEL_GEMINI: process.env.STUDY_MODEL_GEMINI,
