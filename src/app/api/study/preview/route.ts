@@ -38,7 +38,7 @@ export async function GET(request: Request) {
         error:
           error instanceof Error
             ? error.message
-            : "The chapter preview failed.",
+            : "The passage preview failed.",
       },
       { status: 500 },
     );

@@ -27,6 +27,7 @@ const contextFocusSchema = z.object({
       "history",
       "related",
       "geography",
+      "crossReferences",
       "notes",
       "sources",
     ])
@@ -46,6 +47,29 @@ function formatTranslations(context: StudyContext) {
 
 function formatHistory(context: StudyContext) {
   const book = context.parsedReference.book;
+  const openBibleHistory = context.geography
+    .filter(
+      (place) =>
+        place.historicalNotes.length ||
+        place.identificationNotes.length ||
+        place.translationNames.length,
+    )
+    .map((place) =>
+      [
+        `${place.name}: ${place.summary}`,
+        place.historicalNotes.length
+          ? `Historical notes: ${place.historicalNotes.join(" ")}`
+          : null,
+        place.identificationNotes.length
+          ? `Identification notes: ${place.identificationNotes.join(" ")}`
+          : null,
+        place.translationNames.length
+          ? `Translation forms: ${place.translationNames.join(", ")}`
+          : null,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    );
 
   return [
     `Reference: ${context.parsedReference.reference}`,
@@ -54,6 +78,11 @@ function formatHistory(context: StudyContext) {
     `Composition window: ${book.compositionWindow}`,
     `Setting: ${book.setting}`,
     `Summary: ${book.summary}`,
+    "",
+    "OpenBible place history:",
+    openBibleHistory.length
+      ? openBibleHistory.join("\n\n")
+      : "No OpenBible place-history notes were available for this passage.",
   ].join("\n");
 }
 
@@ -74,20 +103,39 @@ function formatRelatedChapters(context: StudyContext) {
 
 function formatGeography(context: StudyContext) {
   if (!context.geography.length) {
-    return "No explicit geography entries were matched for this chapter.";
+    return "No explicit geography entries were matched for this passage.";
   }
 
   return context.geography
     .map(
       (place) =>
-        `${place.name} (${place.type})\nSummary: ${place.summary}\nVerses: ${place.mentionedVerses.join(", ")}\nCoordinates: ${place.coordinates ?? "Unknown"}`,
+        `${place.name} (${place.type})\nSummary: ${place.summary}\nVerses: ${place.mentionedVerses.join(", ")}\nCoordinates: ${place.coordinates ?? "Unknown"}\nHistorical notes: ${
+          place.historicalNotes.length
+            ? place.historicalNotes.join(" ")
+            : "None supplied."
+        }`,
+    )
+    .join("\n\n");
+}
+
+function formatOpenBibleCrossReferences(context: StudyContext) {
+  if (!context.openBibleCrossReferences.length) {
+    return "No OpenBible cross-reference candidates were available for this passage.";
+  }
+
+  return context.openBibleCrossReferences
+    .map(
+      (group) =>
+        `${group.sourceVerse}\n${group.references
+          .map((entry) => `- ${entry.reference}`)
+          .join("\n")}`,
     )
     .join("\n\n");
 }
 
 function formatNotes(context: StudyContext) {
   if (!context.studyNotes.length) {
-    return "No supplemental study-note adapter returned notes for this chapter.";
+    return "No supplemental study-note adapter returned notes for this passage.";
   }
 
   return context.studyNotes
@@ -119,6 +167,8 @@ function createStudyContextTool(context: StudyContext) {
           return formatRelatedChapters(context);
         case "geography":
           return formatGeography(context);
+        case "crossReferences":
+          return formatOpenBibleCrossReferences(context);
         case "notes":
           return formatNotes(context);
         case "sources":
@@ -138,6 +188,9 @@ function createStudyContextTool(context: StudyContext) {
             "GEOGRAPHY",
             formatGeography(context),
             "",
+            "OPENBIBLE CROSS REFERENCES",
+            formatOpenBibleCrossReferences(context),
+            "",
             "NOTES",
             formatNotes(context),
             "",
@@ -149,7 +202,7 @@ function createStudyContextTool(context: StudyContext) {
     {
       name: "read_study_context",
       description:
-        "Read the prepared study bundle, including chapter text comparisons, chronology, geography, notes, and source diagnostics.",
+        "Read the prepared study bundle, including passage text comparisons, chronology, geography, notes, and source diagnostics.",
       schema: contextFocusSchema,
     },
   );
@@ -194,16 +247,17 @@ function buildAnalystPrompt(
   return [
     "You are one analyst in a multi-model Bible study workflow.",
     `Your primary lens is: ${modelConfig.lens}`,
-    `Study the chapter ${input.reference}.`,
+    `Study the passage ${input.reference}.`,
     input.focusQuestion
       ? `The user's focus question is: ${input.focusQuestion}`
       : "No extra focus question was supplied.",
-    "Before you answer, read the full chapter bundle carefully and make sure your reasoning reflects the entire chapter rather than isolated verses.",
-    "Also read the adjacent chapter context so the chapter is interpreted in its immediate literary flow.",
-    "Call read_study_context at least three times, including translations, related, and one of history or geography.",
+    "Before you answer, read the full passage bundle carefully and make sure your reasoning reflects the whole selected passage rather than isolated verses.",
+    "Also read the adjacent chapter context so the passage is interpreted in its immediate literary flow.",
+    "Call read_study_context at least five times, including translations, related, history, geography, and crossReferences.",
     "Work from the provided sources first, then make careful inferences where needed.",
     "Distinguish between explicit textual observation and interpretive judgment.",
-    "Use canonical cross-references that genuinely illuminate the chapter.",
+    "Use canonical cross-references that genuinely illuminate the passage; do the extra work to include 8-12 specific biblical references when the text supports them.",
+    "Use OpenBible cross-reference candidates as leads, but filter them for genuine relevance and explain the specific connection.",
     "Keep your output substantive but concise. Fill every schema field.",
   ].join("\n");
 }
@@ -246,7 +300,7 @@ const ANALYST_SKIP_MESSAGE = "Model output malformed.. skipping.";
 
 function buildFailureReport(
   modelConfig: StudyModelConfig,
-  _message: string,
+  message: string,
 ): AnalystReport {
   return analystReportSchema.parse({
     modelId: modelConfig.id,
@@ -284,6 +338,18 @@ function buildFailureReport(
         reference: "Operational warning",
         relevance: "Investigate the failing provider or model configuration.",
       },
+      {
+        reference: "OpenBible context unavailable",
+        relevance: "This failed analyst did not inspect OpenBible references.",
+      },
+      {
+        reference: "Passage context unavailable",
+        relevance: "This failed analyst did not compare the surrounding passage.",
+      },
+      {
+        reference: "Canonical synthesis required",
+        relevance: "Use completed analyst reports to recover biblical links.",
+      },
     ],
     keyThemes: ["Analysis unavailable", "Retry needed", "Use remaining reports"],
     meaning:
@@ -292,7 +358,7 @@ function buildFailureReport(
       "Review the other model outputs first.",
       "Retry the failed model once the configuration issue is resolved.",
     ],
-    cautions: [ANALYST_SKIP_MESSAGE],
+    cautions: [`${ANALYST_SKIP_MESSAGE} ${message}`],
     confidence: "low",
     sourcesUsed: ["Runtime failure placeholder"],
   });
@@ -312,14 +378,14 @@ export async function runAnalystAgent(
       modelConfig.id,
       modelConfig.label,
       "running",
-      "Preparing chapter bundle and model invocation.",
+      "Preparing passage bundle and model invocation.",
     );
     await emitLog(
       options.onEvent,
       "agent",
       modelConfig.id,
       modelConfig.label,
-      "Reading full chapter translations, adjacent chapters, and contextual sources.",
+      "Reading full passage translations, adjacent chapters, and contextual sources.",
     );
     const agent = createAgent({
       model: createOpenRouterModel(modelConfig.model),
@@ -384,8 +450,11 @@ function buildSynthesisPrompt(input: NormalizedStudyRequest) {
       : "No extra focus question was supplied.",
     "Read the analyst reports first, then reconcile their overlap and differences.",
     "Preserve meaningful tension where the analysts disagree rather than flattening everything.",
-    "Anchor the synthesis in the supplied context, especially the full chapter, adjacent chapters, translation comparisons, and canonical links.",
-    "Include a pronunciation guide for difficult names, places, or terms from this chapter and its setting.",
+    "Anchor the synthesis in the supplied context, especially the full passage, adjacent chapters, translation comparisons, OpenBible context, and canonical links.",
+    "Include a pronunciation guide for difficult names, places, or terms from this passage and its setting.",
+    "Build a verse-by-verse breakdown for every verse in the selected passage. For each verse, explain the verse's plain meaning, what is happening to Jesus or how the verse relates to Jesus and the gospel, and the verse's significance or undertones in the larger context.",
+    "For Gospel passages, be concrete about what is happening to Jesus in the narrative. For non-Gospel passages, avoid forced claims and explain the redemptive-historical or canonical connection where appropriate.",
+    "Include 8-14 canonical links in the synthesis when the analyst reports and OpenBible candidates support them.",
     "Keep the final result clear enough for a dashboard viewer to understand quickly.",
   ].join("\n");
 }
@@ -394,9 +463,64 @@ function fallbackSynthesis(reports: AnalystReport[], context: StudyContext): Fin
   const topThemes = Array.from(
     new Set(reports.flatMap((report) => report.keyThemes)),
   ).slice(0, 6);
-  const firstCrossReferences = reports
-    .flatMap((report) => report.crossReferences)
-    .slice(0, 6);
+  const firstCrossReferences = Array.from(
+    new Map(
+      reports
+        .flatMap((report) => report.crossReferences)
+        .map((entry) => [entry.reference, entry]),
+    ).values(),
+  ).slice(0, 16);
+  const fallbackCanonicalLinks = [
+    ...firstCrossReferences,
+    {
+      reference: context.parsedReference.reference,
+      relevance: "Fallback synthesis could not gather richer cross-reference data.",
+    },
+    {
+      reference: "OpenBible cross references",
+      relevance: "Review the OpenBible context pack for candidate biblical links.",
+    },
+    {
+      reference: "Analyst reports",
+      relevance: "Use the per-model cards directly until the retry succeeds.",
+    },
+    {
+      reference: "Retry advised",
+      relevance: "The final synthesis model failed and fell back to deterministic merge.",
+    },
+    {
+      reference: "Selected passage",
+      relevance: "The passage text remains the primary control for interpretation.",
+    },
+    {
+      reference: "Adjacent chapters",
+      relevance: "Immediate literary context still frames the selected passage.",
+    },
+  ].slice(0, 16);
+  const verseBreakdown = (context.versions[0]?.verses ?? []).map((verse) => ({
+    verse: verse.verse,
+    meaning:
+      "Fallback mode could not generate a full line-by-line interpretation for this verse.",
+    jesusContext:
+      "Review the completed analyst reports and rerun the synthesis for a fuller Jesus-centered reading.",
+    significance:
+      "This verse remains part of the selected passage's flow and should be read with the surrounding verses.",
+    crossReferences: fallbackCanonicalLinks.slice(0, 1),
+  }));
+  const safeVerseBreakdown = verseBreakdown.length
+    ? verseBreakdown
+    : [
+        {
+          verse: context.parsedReference.reference,
+          meaning:
+            "Fallback mode could not generate verse-level interpretation.",
+          jesusContext:
+            "Rerun the synthesis for a fuller Jesus-centered reading.",
+          significance:
+            "Use the selected passage and analyst reports until the synthesis can be retried.",
+          crossReferences: fallbackCanonicalLinks.slice(0, 1),
+        },
+      ];
   const pronunciationGuide = (
     context.geography.length
       ? context.geography.slice(0, 4).map((place) => ({
@@ -433,27 +557,13 @@ function fallbackSynthesis(reports: AnalystReport[], context: StudyContext): Fin
     translationSnapshot:
       reports[0]?.translationInsights[0]?.observation ??
       "Translation comparison unavailable in fallback mode.",
-    canonicalLinks: firstCrossReferences.length
-      ? firstCrossReferences
-      : [
-          {
-            reference: context.parsedReference.reference,
-            relevance: "Fallback synthesis could not gather richer cross-reference data.",
-          },
-          {
-            reference: "Retry advised",
-            relevance: "The final synthesis model failed and fell back to deterministic merge.",
-          },
-          {
-            reference: "Analyst reports",
-            relevance: "Use the per-model cards directly until the retry succeeds.",
-          },
-        ],
+    canonicalLinks: fallbackCanonicalLinks.slice(0, Math.max(6, fallbackCanonicalLinks.length)),
+    verseBreakdown: safeVerseBreakdown,
     practicalTakeaways: Array.from(
       new Set(reports.flatMap((report) => report.livedResponse)),
     ).slice(0, 6),
     pronunciationGuide,
-    prayerPrompt: `Lord, give clarity, humility, and obedience as this chapter is studied in community.`,
+    prayerPrompt: `Lord, give clarity, humility, and obedience as this passage is studied in community.`,
     openQuestions: [
       "Which analyst disagreements should be reviewed manually?",
       "Would a second pass with licensed Bible/commentary APIs improve the synthesis?",
@@ -486,7 +596,7 @@ export async function runFinalSynthesisAgent(
       "synthesis",
       "synthesis",
       "Final Synthesis",
-      "Reading analyst reports, translation differences, and adjacent chapter context.",
+      "Reading analyst reports, translation differences, OpenBible context, and adjacent chapter context.",
     );
     const synthesisModel = getSynthesizerModel();
     const agent = createAgent({

@@ -2,6 +2,7 @@ import { getEnv } from "@/lib/env";
 import { getBookChapterCount } from "@/lib/study/book-chapters";
 import { getBookMetadata } from "@/lib/study/book-metadata";
 import {
+  OPEN_BIBLE_CROSS_REFERENCES_DOCS,
   OPEN_BIBLE_GEOGRAPHY_DOCS,
   PUBLIC_BIBLE_API_DOCS,
   YOUVERSION_DOCS,
@@ -16,6 +17,7 @@ import {
   getChapterTexts,
 } from "@/lib/study/providers/bible-text";
 import { getGeographyForChapter } from "@/lib/study/providers/geography";
+import { getOpenBibleCrossReferences } from "@/lib/study/providers/openbible-cross-references";
 import { getStudyNotes } from "@/lib/study/providers/study-notes";
 import { parseChapterReference } from "@/lib/study/reference";
 import {
@@ -61,16 +63,16 @@ export async function buildStudyContext(
   const env = getEnv();
   const chapterCount = getBookChapterCount(parsedReference.bookOsis);
   const relatedChapterRefs = [
-    parsedReference.chapter > 1
+    parsedReference.startChapter > 1
       ? {
           relation: "previous" as const,
-          chapter: parsedReference.chapter - 1,
+          chapter: parsedReference.startChapter - 1,
         }
       : null,
-    parsedReference.chapter < chapterCount
+    parsedReference.endChapter < chapterCount
       ? {
           relation: "next" as const,
-          chapter: parsedReference.chapter + 1,
+          chapter: parsedReference.endChapter + 1,
         }
       : null,
   ].filter(
@@ -99,6 +101,9 @@ export async function buildStudyContext(
             reference: `${parsedReference.book.name} ${entry.chapter}`,
             osis: `${parsedReference.bookOsis}.${entry.chapter}`,
             chapter: entry.chapter,
+            startChapter: entry.chapter,
+            endChapter: entry.chapter,
+            chapters: [entry.chapter],
           };
           const result = await getChapterTextForVersion(
             relatedReference,
@@ -118,9 +123,13 @@ export async function buildStudyContext(
       getGeographyForChapter(parsedReference),
       getStudyNotes(parsedReference),
     ]);
+  const openBibleCrossReferencesResult = await getOpenBibleCrossReferences(
+    parsedReference,
+    chapterTextsResult.texts[0]?.verses ?? [],
+  );
   await emitContextLog(
     options.onEvent,
-    `Loaded ${chapterTextsResult.texts.length} primary translations, ${relatedChapters.length} adjacent chapters, ${geography.length} geography matches, and ${studyNotesResult.notes.length} supplemental notes.`,
+    `Loaded ${chapterTextsResult.texts.length} primary translations, ${relatedChapters.length} adjacent chapters, ${geography.length} geography matches, ${openBibleCrossReferencesResult.groups.length} OpenBible cross-reference groups, and ${studyNotesResult.notes.length} supplemental notes.`,
   );
   const youVersionApiServed = chapterTextsResult.providerUsage.filter(
     (entry) => entry.provider === "youversion-api",
@@ -133,6 +142,7 @@ export async function buildStudyContext(
   );
   const diagnostics = [
     ...chapterTextsResult.warnings,
+    ...openBibleCrossReferencesResult.warnings,
     ...studyNotesResult.warnings,
     ...getModelStackWarnings(),
   ];
@@ -140,6 +150,12 @@ export async function buildStudyContext(
   if (!geography.length) {
     diagnostics.push(
       `No explicit geography matches were found in OpenBible's place dataset for ${parsedReference.reference}.`,
+    );
+  }
+
+  if (!openBibleCrossReferencesResult.groups.length) {
+    diagnostics.push(
+      `No OpenBible cross-reference groups were returned for ${parsedReference.reference}.`,
     );
   }
 
@@ -167,7 +183,7 @@ export async function buildStudyContext(
     );
   } else if (!env.YVP_APP_KEY) {
     diagnostics.push(
-      "YouVersion is not active yet because no YouVersion app key was found, so the app is using the public multi-version Bible source for chapter text.",
+      "YouVersion is not active yet because no YouVersion app key was found, so the app is using the public multi-version Bible source for passage text.",
     );
   } else if (youVersionApiServed.length === 0) {
     diagnostics.push(
@@ -183,6 +199,7 @@ export async function buildStudyContext(
     versions: chapterTextsResult.texts,
     relatedChapters,
     geography,
+    openBibleCrossReferences: openBibleCrossReferencesResult.groups,
     studyNotes: studyNotesResult.notes,
     sourceDiagnostics: diagnostics,
     sourceCatalog: [
@@ -201,14 +218,24 @@ export async function buildStudyContext(
               ? `Used as fallback for ${publicServed
                   .map((entry) => entry.versionId)
                   .join(", ")}.`
-              : "Primary text source for the selected chapter."
+              : "Primary text source for the selected passage."
             : "Not used because the requested translations were served without the public provider.",
       },
       {
         label: "OpenBible Geography",
         url: OPEN_BIBLE_GEOGRAPHY_DOCS,
         status: "active" as const,
-        note: "Geographic place mentions, location context, and place-photo matches when available.",
+        note: "Geographic place mentions, location context, historical notes, and place-photo matches when available.",
+      },
+      {
+        label: "OpenBible Cross References",
+        url: OPEN_BIBLE_CROSS_REFERENCES_DOCS,
+        status: openBibleCrossReferencesResult.groups.length
+          ? ("active" as const)
+          : ("fallback" as const),
+        note: openBibleCrossReferencesResult.groups.length
+          ? `Loaded cross-reference candidates for ${openBibleCrossReferencesResult.groups.length} verse${openBibleCrossReferencesResult.groups.length === 1 ? "" : "s"}.`
+          : "Queried OpenBible Labs, but no cross-reference candidates were returned.",
       },
       {
         label: "YouVersion API",

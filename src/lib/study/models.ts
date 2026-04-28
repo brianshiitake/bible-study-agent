@@ -2,14 +2,14 @@ import { ChatOpenAI } from "@langchain/openai";
 import { getEnv } from "@/lib/env";
 
 export type StudyModelConfig = {
-  id: "gpt54" | "opus46" | "gemini31" | "glm45";
+  id: "gpt55" | "opus46" | "gemini31" | "glm45";
   label: string;
   model: string;
   lens: string;
 };
 
 export const MODEL_ORDER: StudyModelConfig["id"][] = [
-  "gpt54",
+  "gpt55",
   "opus46",
   "gemini31",
   "glm45",
@@ -20,10 +20,10 @@ export function getStudyModels(): StudyModelConfig[] {
 
   return [
     {
-      id: "gpt54",
-      label: "GPT-5.4",
+      id: "gpt55",
+      label: "GPT-5.5",
       model: env.STUDY_MODEL_GPT,
-      lens: "Textual structure, argument flow, and chapter-level logic.",
+      lens: "Textual structure, argument flow, and passage-level logic.",
     },
     {
       id: "opus46",

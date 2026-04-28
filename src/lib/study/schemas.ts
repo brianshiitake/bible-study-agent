@@ -43,6 +43,11 @@ export const parsedReferenceSchema = z.object({
   reference: z.string(),
   osis: z.string(),
   bookOsis: z.string(),
+  startChapter: z.number().int().positive(),
+  endChapter: z.number().int().positive(),
+  chapters: z.array(z.number().int().positive()).min(1),
+  // Legacy alias retained so persisted single-chapter studies and older UI
+  // references continue to resolve against the opening chapter.
   chapter: z.number().int().positive(),
   book: bookContextSchema,
 });
@@ -95,11 +100,25 @@ export const geographyPlaceSchema = z.object({
   name: z.string(),
   type: z.string(),
   summary: z.string(),
+  historicalNotes: z.array(z.string()).default([]),
+  identificationNotes: z.array(z.string()).default([]),
+  translationNames: z.array(z.string()).default([]),
   modernAssociation: z.string().optional(),
   coordinates: z.string().optional(),
   mentionedVerses: z.array(z.string()),
   sourceUrl: z.string().url(),
   photoMatch: photoMatchSchema.optional(),
+});
+
+export const openBibleCrossReferenceGroupSchema = z.object({
+  sourceVerse: z.string(),
+  sourceUrl: z.string().url(),
+  references: z.array(
+    z.object({
+      reference: z.string(),
+      sourceUrl: z.string().url(),
+    }),
+  ),
 });
 
 export const studyNoteSchema = z.object({
@@ -122,6 +141,7 @@ export const studyContextSchema = z.object({
   versions: z.array(chapterTextSchema).min(1),
   relatedChapters: z.array(relatedChapterSchema),
   geography: z.array(geographyPlaceSchema),
+  openBibleCrossReferences: z.array(openBibleCrossReferenceGroupSchema).default([]),
   studyNotes: z.array(studyNoteSchema),
   sourceDiagnostics: z.array(z.string()),
   sourceCatalog: z.array(sourceCatalogEntrySchema),
@@ -143,6 +163,14 @@ export const translationInsightSchema = z.object({
   significance: z.string(),
 });
 
+export const verseBreakdownSchema = z.object({
+  verse: z.string(),
+  meaning: z.string(),
+  jesusContext: z.string(),
+  significance: z.string(),
+  crossReferences: z.array(crossReferenceSchema).min(1).max(5),
+});
+
 export const analystPayloadSchema = z.object({
   thesis: z.string(),
   chapterMovement: z.array(z.string()).min(2).max(8),
@@ -150,7 +178,7 @@ export const analystPayloadSchema = z.object({
   chronologyInsight: z.string(),
   geographyInsight: z.string(),
   translationInsights: z.array(translationInsightSchema).min(1).max(6),
-  crossReferences: z.array(crossReferenceSchema).min(3).max(8),
+  crossReferences: z.array(crossReferenceSchema).min(6).max(14),
   keyThemes: z.array(z.string()).min(3).max(8),
   meaning: z.string(),
   livedResponse: z.array(z.string()).min(2).max(6),
@@ -175,7 +203,8 @@ export const finalSynthesisSchema = z.object({
   historicalSnapshot: z.string(),
   geographicSnapshot: z.string(),
   translationSnapshot: z.string(),
-  canonicalLinks: z.array(crossReferenceSchema).min(3).max(8),
+  canonicalLinks: z.array(crossReferenceSchema).min(6).max(16),
+  verseBreakdown: z.array(verseBreakdownSchema).min(1),
   practicalTakeaways: z.array(z.string()).min(3).max(6),
   pronunciationGuide: z.array(
     z.object({

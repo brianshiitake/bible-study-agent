@@ -2,21 +2,21 @@
 
 AI-assisted Bible study workspace built with Next.js, LangGraph, and OpenRouter.
 
-Enter a chapter like `John 3`, and the app will:
+Enter a chapter or chapter range like `John 3` or `John 3-4`, and the app will:
 
-- Build a context pack with chapter text, adjacent chapters, geography, and source diagnostics
+- Build a context pack with passage text, adjacent chapters, geography, cross references, and source diagnostics
 - Run four analyst models in parallel
-- Produce a final synthesis with thesis, consensus, differences, canonical links, and practical takeaways
+- Produce a final synthesis with thesis, consensus, differences, canonical links, verse-by-verse notes, and practical takeaways
 - Optionally generate a voice overview
 - Optionally persist studies and passage questions for shareable history
 
 ## Features
 
-- Multi-model New Testament chapter analysis
+- Multi-model Bible passage analysis
 - Live execution console over a streaming API route
 - Translation comparison with provider diagnostics
 - Adjacent chapter summaries for before/after context
-- Geography matches from the OpenBible dataset
+- Geography and cross-reference context from OpenBible.info
 - Final synthesis with pronunciation guide, prayer prompt, and open questions
 - Optional saved study history and share links
 - Optional passage-level Q&A saved against a persisted study
@@ -35,11 +35,11 @@ Enter a chapter like `John 3`, and the app will:
 
 ## Model Defaults
 
-- `openai/gpt-5.4`
+- `openai/gpt-5.5`
 - `anthropic/claude-opus-4.6`
 - `google/gemini-3.1-pro-preview`
 - `z-ai/glm-4.5`
-- Final synthesis: `openai/gpt-5.4`
+- Final synthesis: `openai/gpt-5.5`
 
 All model IDs can be overridden through environment variables.
 
@@ -78,11 +78,11 @@ YVP_APP_KEY=
 RAPIDAPI_KEY=
 SUPABASE_CONNECTION_STRING=
 RAPIDAPI_COMPLETE_STUDY_BIBLE_HOST=
-STUDY_MODEL_GPT=openai/gpt-5.4
+STUDY_MODEL_GPT=openai/gpt-5.5
 STUDY_MODEL_OPUS=anthropic/claude-opus-4.6
 STUDY_MODEL_GEMINI=google/gemini-3.1-pro-preview
 STUDY_MODEL_GLM=z-ai/glm-4.5
-STUDY_MODEL_SYNTHESIS=openai/gpt-5.4
+STUDY_MODEL_SYNTHESIS=openai/gpt-5.5
 ```
 
 ### What each optional variable enables
@@ -114,8 +114,8 @@ npm run typecheck
 
 ## How It Works
 
-1. The app resolves a New Testament chapter reference and requested translations.
-2. It loads chapter text, adjacent chapter summaries, geography, and supplemental source metadata.
+1. The app resolves a Bible chapter reference or chapter range and requested translations.
+2. It loads passage text, adjacent chapter summaries, OpenBible context, and supplemental source metadata.
 3. LangGraph fans out to four analyst agents in parallel.
 4. A final synthesis agent merges the reports into one structured study result.
 5. If configured, the app also generates a narrated audio overview.

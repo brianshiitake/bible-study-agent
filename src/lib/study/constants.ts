@@ -6,6 +6,8 @@ export const DEFAULT_VERSION_IDS = [
   "en-cev",
 ] as const;
 
+export const MAX_STUDY_CHAPTER_RANGE = 5;
+
 export const VERSION_SOURCE_URL =
   "https://cdn.jsdelivr.net/gh/wldeh/bible-api/bibles/bibles.json";
 
@@ -20,6 +22,12 @@ export const OPEN_BIBLE_GEOGRAPHY_DOCS =
 
 export const OPEN_BIBLE_GEOGRAPHY_PHOTOS_URL =
   "https://www.openbible.info/geo/photos/";
+
+export const OPEN_BIBLE_CROSS_REFERENCES_URL =
+  "https://www.openbible.info/labs/cross-references/search";
+
+export const OPEN_BIBLE_CROSS_REFERENCES_DOCS =
+  "https://www.openbible.info/blog/2010/04/new-in-labs-cross-references/";
 
 export const YOUVERSION_DOCS = "https://developers.youversion.com/api-usage";
 

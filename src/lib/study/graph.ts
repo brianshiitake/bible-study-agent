@@ -92,7 +92,7 @@ function prepareContextNode(options: RunStudyGraphOptions) {
       "context",
       "Context",
       "running",
-      "Preparing chapter text, related chapters, geography, and notes.",
+      "Preparing passage text, related chapters, geography, cross references, and notes.",
     );
     const context = await buildStudyContext(state.input, {
       onEvent: options.onEvent,
@@ -176,18 +176,18 @@ function narrationNode(options: RunStudyGraphOptions) {
 function buildCompiledGraph(options: RunStudyGraphOptions) {
   return new StateGraph(StudyGraphState)
     .addNode("prepareContext", prepareContextNode(options))
-    .addNode("gpt54", createAnalystNode("gpt54", options))
+    .addNode("gpt55", createAnalystNode("gpt55", options))
     .addNode("opus46", createAnalystNode("opus46", options))
     .addNode("gemini31", createAnalystNode("gemini31", options))
     .addNode("glm45", createAnalystNode("glm45", options))
     .addNode("synthesize", synthesizeNode(options))
     .addNode("narration", narrationNode(options))
     .addEdge(START, "prepareContext")
-    .addEdge("prepareContext", "gpt54")
+    .addEdge("prepareContext", "gpt55")
     .addEdge("prepareContext", "opus46")
     .addEdge("prepareContext", "gemini31")
     .addEdge("prepareContext", "glm45")
-    .addEdge("gpt54", "synthesize")
+    .addEdge("gpt55", "synthesize")
     .addEdge("opus46", "synthesize")
     .addEdge("gemini31", "synthesize")
     .addEdge("glm45", "synthesize")

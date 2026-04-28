@@ -14,7 +14,10 @@ import { motion, AnimatePresence } from "motion/react";
 import { cn } from "@/lib/utils";
 import { getBookChapterCount } from "@/lib/study/book-chapters";
 import { getAllBookMetadata } from "@/lib/study/book-metadata";
-import { DEFAULT_VERSION_IDS } from "@/lib/study/constants";
+import {
+  DEFAULT_VERSION_IDS,
+  MAX_STUDY_CHAPTER_RANGE,
+} from "@/lib/study/constants";
 import type { StudyRunEvent } from "@/lib/study/events";
 import {
   type PersistedPassageQuestion,
@@ -254,7 +257,7 @@ const viewOptions: Array<{ key: ViewKey; label: string }> = [
 
 const terminalTargets: Array<{ key: string; label: string }> = [
   { key: "context", label: "Context" },
-  { key: "gpt54", label: "GPT-5.4" },
+  { key: "gpt55", label: "GPT-5.5" },
   { key: "opus46", label: "Claude Opus 4.6" },
   { key: "gemini31", label: "Gemini 3.1 Pro" },
   { key: "glm45", label: "GLM 4.5" },
@@ -321,6 +324,25 @@ function formatTimestamp(value: string) {
     hour: "numeric",
     minute: "2-digit",
   }).format(new Date(value));
+}
+
+function getStudyStartChapter(study: ActiveStudy) {
+  return study.context.parsedReference.startChapter ?? study.context.parsedReference.chapter;
+}
+
+function getStudyEndChapter(study: ActiveStudy) {
+  return (
+    study.context.parsedReference.endChapter ??
+    study.context.parsedReference.chapter
+  );
+}
+
+function formatChapterRangeLabel(start: number, end: number) {
+  return start === end ? `Chapter ${start}` : `Chapters ${start}-${end}`;
+}
+
+function formatReference(bookName: string, start: number, end: number) {
+  return start === end ? `${bookName} ${start}` : `${bookName} ${start}-${end}`;
 }
 
 function formatConsoleTime(value: string) {
@@ -448,7 +470,7 @@ function BookPreviewModal({
           transition={{ duration: 0.2 }}
           role="dialog"
           aria-modal="true"
-          aria-label={chapter ? `${chapter.reference} preview` : "Chapter preview"}
+          aria-label={chapter ? `${chapter.reference} preview` : "Passage preview"}
           className="flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-[1.5rem] border border-[#ae7a1a]/30 bg-[#fbf6ed] shadow-[0_24px_80px_rgba(36,28,19,0.24)]"
           onClick={(event) => event.stopPropagation()}
         >
@@ -458,7 +480,7 @@ function BookPreviewModal({
                 Preview scripture
               </div>
               <h3 className="font-display mt-2 text-3xl text-[#241c13]">
-                {chapter?.reference ?? "Loading chapter..."}
+                {chapter?.reference ?? "Loading passage..."}
               </h3>
               {chapter ? (
                 <div className="mt-2 text-sm text-[#241c13]/60">
@@ -478,7 +500,7 @@ function BookPreviewModal({
           <div className="overflow-y-auto px-6 py-5">
             {isLoading ? (
               <div className="rounded-[1rem] border border-[#241c13]/10 bg-white/60 px-5 py-5 text-sm leading-7 text-[#241c13]/65">
-                Loading chapter text...
+                Loading passage text...
               </div>
             ) : null}
 
@@ -590,6 +612,66 @@ function CrossReferenceCards({
           <p className="mt-2 text-[15px] leading-7 text-[#241c13]/85">
             {item.relevance}
           </p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function VerseBreakdownCards({
+  items,
+}: {
+  items: Array<{
+    verse: string;
+    meaning: string;
+    jesusContext: string;
+    significance: string;
+    crossReferences: Array<{ reference: string; relevance: string }>;
+  }>;
+}) {
+  return (
+    <div className="max-h-[46rem] space-y-3 overflow-y-auto pr-1">
+      {items.map((item, index) => (
+        <div
+          key={`${item.verse}-${index}`}
+          className="rounded-[1rem] border border-[#241c13]/10 bg-[#f3ead8]/70 px-4 py-4"
+        >
+          <div className="font-display text-lg text-[#241c13]">
+            {item.verse}
+          </div>
+          <div className="mt-3 grid gap-3 xl:grid-cols-3">
+            <div>
+              <Eyebrow>Meaning</Eyebrow>
+              <p className="mt-2 text-[15px] leading-7 text-[#241c13]/85">
+                {item.meaning}
+              </p>
+            </div>
+            <div>
+              <Eyebrow>Jesus context</Eyebrow>
+              <p className="mt-2 text-[15px] leading-7 text-[#241c13]/85">
+                {item.jesusContext}
+              </p>
+            </div>
+            <div>
+              <Eyebrow>Significance</Eyebrow>
+              <p className="mt-2 text-[15px] leading-7 text-[#241c13]/85">
+                {item.significance}
+              </p>
+            </div>
+          </div>
+          {item.crossReferences.length ? (
+            <div className="mt-4 flex flex-wrap gap-2">
+              {item.crossReferences.map((reference) => (
+                <span
+                  key={`${item.verse}-${reference.reference}`}
+                  className="rounded-full border border-[#241c13]/10 bg-[#fbf6ed] px-3 py-1 text-xs text-[#241c13]/70"
+                  title={reference.relevance}
+                >
+                  {reference.reference}
+                </span>
+              ))}
+            </div>
+          ) : null}
         </div>
       ))}
     </div>
@@ -847,6 +929,10 @@ function FinalSummaryView({
         </Card>
       </div>
 
+      <Card label="Verse-by-verse">
+        <VerseBreakdownCards items={final.verseBreakdown} />
+      </Card>
+
       {study.voiceNarration ? (
         <Card label="Voice overview">
           <div className="space-y-4">
@@ -1079,7 +1165,7 @@ function ContextPack({ study }: { study: ActiveStudy }) {
           </div>
         ) : (
           <p className="text-[15px] leading-7 text-[#241c13]/75">
-            No adjacent chapter context was available for this chapter.
+            No adjacent chapter context was available for this passage.
           </p>
         )}
       </Card>
@@ -1115,6 +1201,18 @@ function ContextPack({ study }: { study: ActiveStudy }) {
                   <p className="mt-3 text-[15px] leading-7 text-[#241c13]/85">
                     {place.summary}
                   </p>
+                  {place.historicalNotes.length ? (
+                    <div className="mt-4">
+                      <Eyebrow>History</Eyebrow>
+                      <BulletList items={place.historicalNotes} />
+                    </div>
+                  ) : null}
+                  {place.identificationNotes.length ? (
+                    <div className="mt-4">
+                      <Eyebrow>Identification</Eyebrow>
+                      <BulletList items={place.identificationNotes} />
+                    </div>
+                  ) : null}
                   {place.photoMatch ? (
                     <p className="mt-3 text-xs leading-6 text-[#241c13]/55">
                       Photo: {place.photoMatch.caption}
@@ -1132,6 +1230,40 @@ function ContextPack({ study }: { study: ActiveStudy }) {
         ) : (
           <p className="text-[15px] leading-7 text-[#241c13]/75">
             No explicit place matches were found in the OpenBible geography dataset.
+          </p>
+        )}
+      </Card>
+
+      <Card label="OpenBible cross references">
+        {study.context.openBibleCrossReferences.length ? (
+          <div className="grid gap-3 lg:grid-cols-2">
+            {study.context.openBibleCrossReferences.map((group) => (
+              <a
+                key={group.sourceVerse}
+                href={group.sourceUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="rounded-[1rem] border border-[#241c13]/10 bg-[#f3ead8]/70 px-4 py-4 transition hover:border-[#ae7a1a]/40 hover:bg-[#f3e3c6]/70"
+              >
+                <div className="font-display text-base text-[#241c13]">
+                  {group.sourceVerse}
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {group.references.map((reference) => (
+                    <span
+                      key={`${group.sourceVerse}-${reference.reference}`}
+                      className="rounded-full border border-[#241c13]/10 bg-[#fbf6ed] px-3 py-1 text-xs text-[#241c13]/70"
+                    >
+                      {reference.reference}
+                    </span>
+                  ))}
+                </div>
+              </a>
+            ))}
+          </div>
+        ) : (
+          <p className="text-[15px] leading-7 text-[#241c13]/75">
+            No OpenBible cross-reference candidates were loaded for this passage.
           </p>
         )}
       </Card>
@@ -1264,6 +1396,8 @@ function CreateStudyView({
   onSortModeChange,
   chapterValue,
   onChapterChange,
+  endChapterValue,
+  onEndChapterChange,
   focusQuestion,
   onFocusChange,
   onSubmit,
@@ -1278,6 +1412,8 @@ function CreateStudyView({
   onSortModeChange: (value: BookSortMode) => void;
   chapterValue: string;
   onChapterChange: (value: string) => void;
+  endChapterValue: string;
+  onEndChapterChange: (value: string) => void;
   focusQuestion: string;
   onFocusChange: (value: string) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
@@ -1287,15 +1423,33 @@ function CreateStudyView({
   history: StudyRunSummary[];
 }) {
   const selectedBook = books.find((book) => book.osis === selectedOsis) ?? null;
-  const previewChapterNumber =
-    Number.isInteger(Number(chapterValue)) && Number(chapterValue) > 0
-      ? Number(chapterValue)
+  const selectedStartChapter = Number(chapterValue);
+  const selectedEndChapter = Number(endChapterValue || chapterValue);
+  const previewStartChapter =
+    Number.isInteger(selectedStartChapter) && selectedStartChapter > 0
+      ? selectedStartChapter
       : 1;
+  const previewEndChapter =
+    Number.isInteger(selectedEndChapter) && selectedEndChapter >= previewStartChapter
+      ? selectedEndChapter
+      : previewStartChapter;
+  const previewReference = selectedBook
+    ? formatReference(selectedBook.name, previewStartChapter, previewEndChapter)
+    : "";
   const visibleBookGroups = useMemo(() => getBookGroups(sortMode), [sortMode]);
   const chapters = useMemo(() => {
     if (!selectedBook) return [];
     return Array.from({ length: selectedBook.chapterCount }, (_, i) => i + 1);
   }, [selectedBook]);
+  const endChapterOptions = useMemo(
+    () =>
+      chapters.filter(
+        (chapter) =>
+          chapter >= previewStartChapter &&
+          chapter - previewStartChapter + 1 <= MAX_STUDY_CHAPTER_RANGE,
+      ),
+    [chapters, previewStartChapter],
+  );
   const [previewModalOpen, setPreviewModalOpen] = useState(false);
   const [previewChapter, setPreviewChapter] = useState<PreviewChapterData | null>(
     null,
@@ -1314,9 +1468,8 @@ function CreateStudyView({
     setIsPreviewLoading(true);
 
     try {
-      const reference = `${selectedBook.name} ${previewChapterNumber}`;
       const params = new URLSearchParams({
-        reference,
+        reference: previewReference,
         version: DEFAULT_VERSION_IDS[0],
       });
       const response = await fetch(`/api/study/preview?${params.toString()}`);
@@ -1328,7 +1481,7 @@ function CreateStudyView({
         throw new Error(
           "error" in payload && payload.error
             ? payload.error
-            : "The chapter preview failed.",
+            : "The passage preview failed.",
         );
       }
 
@@ -1337,7 +1490,7 @@ function CreateStudyView({
       setPreviewError(
         previewLoadError instanceof Error
           ? previewLoadError.message
-          : "The chapter preview failed.",
+          : "The passage preview failed.",
       );
     } finally {
       setIsPreviewLoading(false);
@@ -1358,7 +1511,7 @@ function CreateStudyView({
               <span className="text-[#ae7a1a]">and start your session.</span>
             </h1>
             <p className="mt-5 max-w-xl text-[17px] leading-8 text-[#241c13]/75">
-              Choose the book, choose a chapter, and spawn multiple agents to
+              Choose the book, choose a chapter range, and spawn multiple agents to
               explore deep research and insights based on biblical history
             </p>
           </div>
@@ -1416,6 +1569,7 @@ function CreateStudyView({
                             onClick={() => {
                               onSelectBook(osis);
                               onChapterChange("");
+                              onEndChapterChange("");
                             }}
                             className={cn(
                               "rounded-full border px-4 py-1.5 font-display text-base transition",
@@ -1461,7 +1615,7 @@ function CreateStudyView({
                         </div>
                       </div>
                       <div className="text-right text-[11px] uppercase tracking-[0.18em] text-[#241c13]/45">
-                        Chapter {previewChapterNumber}
+                        {formatChapterRangeLabel(previewStartChapter, previewEndChapter)}
                       </div>
                     </div>
                     <p className="mt-3 text-sm leading-6 text-[#241c13]/75">
@@ -1483,23 +1637,83 @@ function CreateStudyView({
                   <div className="flex items-baseline gap-3">
                     <span className="font-display text-lg text-[#ae7a1a]">02</span>
                     <h2 className="font-display text-xl text-[#241c13]">
-                      Chapter
+                      Chapter range
                     </h2>
                   </div>
+                  <div className="mt-5 grid gap-4 sm:grid-cols-2">
+                    <label className="block">
+                      <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#241c13]/50">
+                        Start
+                      </span>
+                      <select
+                        value={chapterValue}
+                        onChange={(event) => {
+                          const nextStart = event.target.value;
+                          const nextStartNumber = Number(nextStart);
+                          const currentEndNumber = Number(
+                            endChapterValue || nextStart,
+                          );
+
+                          onChapterChange(nextStart);
+
+                          if (
+                            !endChapterValue ||
+                            currentEndNumber < nextStartNumber ||
+                            currentEndNumber - nextStartNumber + 1 >
+                              MAX_STUDY_CHAPTER_RANGE
+                          ) {
+                            onEndChapterChange(nextStart);
+                          }
+                        }}
+                        className="mt-2 h-12 w-full rounded-[0.85rem] border border-[#241c13]/15 bg-[#fbf6ed] px-4 font-display text-lg text-[#241c13] outline-none transition focus:border-[#ae7a1a] focus:bg-white"
+                      >
+                        <option value="">Select</option>
+                        {chapters.map((n) => (
+                          <option key={n} value={String(n)}>
+                            {n}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label className="block">
+                      <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#241c13]/50">
+                        End
+                      </span>
+                      <select
+                        value={endChapterValue || chapterValue}
+                        onChange={(event) => onEndChapterChange(event.target.value)}
+                        disabled={!chapterValue}
+                        className="mt-2 h-12 w-full rounded-[0.85rem] border border-[#241c13]/15 bg-[#fbf6ed] px-4 font-display text-lg text-[#241c13] outline-none transition focus:border-[#ae7a1a] focus:bg-white disabled:cursor-not-allowed disabled:text-[#241c13]/40"
+                      >
+                        <option value="">Select</option>
+                        {endChapterOptions.map((n) => (
+                          <option key={n} value={String(n)}>
+                            {n}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+
                   <div
-                    className="mt-5 grid gap-2"
+                    className="mt-4 grid gap-2"
                     style={{
                       gridTemplateColumns: "repeat(auto-fill, minmax(3rem, 1fr))",
                     }}
                   >
                     {chapters.map((n) => {
-                      const value = String(n);
-                      const active = chapterValue === value;
+                      const active =
+                        n >= previewStartChapter && n <= previewEndChapter;
+
                       return (
                         <button
                           key={n}
                           type="button"
-                          onClick={() => onChapterChange(value)}
+                          onClick={() => {
+                            onChapterChange(String(n));
+                            onEndChapterChange(String(n));
+                          }}
                           className={cn(
                             "flex h-12 items-center justify-center rounded-[0.85rem] font-display text-lg transition",
                             active
@@ -1539,7 +1753,7 @@ function CreateStudyView({
                       value={focusQuestion}
                       onChange={(event) => onFocusChange(event.target.value)}
                       rows={3}
-                      placeholder="e.g. What does this chapter teach about the kingdom?"
+                      placeholder="e.g. What does this passage teach about the kingdom?"
                       className="mt-4 w-full rounded-[1rem] border border-[#241c13]/15 bg-[#fbf6ed] px-4 py-3 text-[16px] leading-7 text-[#241c13] outline-none transition placeholder:text-[#241c13]/40 focus:border-[#ae7a1a] focus:bg-white"
                     />
                   </div>
@@ -1736,7 +1950,7 @@ function ReviewStudyView({
                 New study
               </div>
               <div className="text-[11px] uppercase tracking-[0.2em] text-[#241c13]/50">
-                Pick another chapter
+                Pick another passage
               </div>
             </span>
             <span className="text-lg text-[#241c13]/40 transition group-hover:translate-x-0.5 group-hover:text-[#ae7a1a]">
@@ -1871,12 +2085,12 @@ function ReviewStudyView({
           {activeView === "reader" ? (
             <div className="space-y-6">
               <div>
-                <Eyebrow>Chapter reader</Eyebrow>
+                <Eyebrow>Passage reader</Eyebrow>
                 <h2 className="font-display mt-2 text-3xl text-[#241c13]">
                   Read, highlight, and ask.
                 </h2>
                 <p className="mt-2 max-w-3xl text-[15px] leading-7 text-[#241c13]/75">
-                  Highlight any portion of the chapter to open a focused question.
+                  Highlight any portion of the passage to open a focused question.
                   Answers are saved with this study.
                 </p>
               </div>
@@ -1979,7 +2193,7 @@ function ReviewStudyView({
                                 disabled={isAskingQuestion}
                                 className="rounded-full bg-[#241c13] px-4 py-1.5 text-sm text-[#f8f2e8] transition hover:bg-[#ae7a1a] disabled:cursor-not-allowed disabled:bg-[#241c13]/30"
                               >
-                                {isAskingQuestion ? "Asking..." : "Ask GPT-5.4"}
+                                {isAskingQuestion ? "Asking..." : "Ask GPT-5.5"}
                               </button>
                               <button
                                 type="button"
@@ -2091,7 +2305,7 @@ function ReviewStudyView({
                   Historical, geographic, and literary frame
                 </h2>
                 <p className="mt-2 max-w-3xl text-[15px] leading-7 text-[#241c13]/75">
-                  The bundle fed to the analysts so the chapter is read as a full
+                  The bundle fed to the analysts so the passage is read as a
                   literary unit in its broader canonical context.
                 </p>
               </div>
@@ -2162,7 +2376,10 @@ export function StudyWorkbench({
     initialStudy?.context.parsedReference.book.osis ?? "",
   );
   const [chapterValue, setChapterValue] = useState<string>(
-    initialStudy ? String(initialStudy.context.parsedReference.chapter) : "",
+    initialStudy ? String(getStudyStartChapter(initialStudy)) : "",
+  );
+  const [endChapterValue, setEndChapterValue] = useState<string>(
+    initialStudy ? String(getStudyEndChapter(initialStudy)) : "",
   );
   const [focusQuestion, setFocusQuestion] = useState<string>(
     initialStudy?.request.focusQuestion ?? "",
@@ -2171,17 +2388,21 @@ export function StudyWorkbench({
     useState<SelectionPromptState | null>(null);
 
   const selectedBook = books.find((book) => book.osis === selectedOsis) ?? null;
-  const chapterNumber = Number(chapterValue);
+  const startChapterNumber = Number(chapterValue);
+  const endChapterNumber = Number(endChapterValue || chapterValue);
   const canSubmit =
     !!selectedBook &&
-    Number.isInteger(chapterNumber) &&
-    chapterNumber > 0 &&
-    chapterNumber <= (selectedBook?.chapterCount ?? 0) &&
+    Number.isInteger(startChapterNumber) &&
+    Number.isInteger(endChapterNumber) &&
+    startChapterNumber > 0 &&
+    endChapterNumber >= startChapterNumber &&
+    endChapterNumber <= (selectedBook?.chapterCount ?? 0) &&
+    endChapterNumber - startChapterNumber + 1 <= MAX_STUDY_CHAPTER_RANGE &&
     !isSubmitting &&
     !isStreaming;
 
   const runningReference = selectedBook
-    ? `${selectedBook.name} ${chapterValue}`
+    ? formatReference(selectedBook.name, startChapterNumber, endChapterNumber)
     : "";
 
   function appendConsoleLine(line: string) {
@@ -2286,15 +2507,25 @@ export function StudyWorkbench({
       return;
     }
 
-    const chapter = Number(chapterValue);
+    const startChapter = Number(chapterValue);
+    const endChapter = Number(endChapterValue || chapterValue);
 
     if (
-      !Number.isInteger(chapter) ||
-      chapter <= 0 ||
-      chapter > selectedBook.chapterCount
+      !Number.isInteger(startChapter) ||
+      !Number.isInteger(endChapter) ||
+      startChapter <= 0 ||
+      endChapter < startChapter ||
+      endChapter > selectedBook.chapterCount
     ) {
       setError(
-        `Choose a chapter between 1 and ${selectedBook.chapterCount} for ${selectedBook.name}.`,
+        `Choose a chapter range between 1 and ${selectedBook.chapterCount} for ${selectedBook.name}.`,
+      );
+      return;
+    }
+
+    if (endChapter - startChapter + 1 > MAX_STUDY_CHAPTER_RANGE) {
+      setError(
+        `Choose ${MAX_STUDY_CHAPTER_RANGE} chapters or fewer for one study run.`,
       );
       return;
     }
@@ -2307,7 +2538,7 @@ export function StudyWorkbench({
     setNarrationAutoplayToken(null);
 
     try {
-      const reference = `${selectedBook.name} ${chapter}`;
+      const reference = formatReference(selectedBook.name, startChapter, endChapter);
       const response = await fetch("/api/study/stream", {
         method: "POST",
         headers: {
@@ -2504,6 +2735,7 @@ export function StudyWorkbench({
     setPhase("create");
     setSelectedOsis("");
     setChapterValue("");
+    setEndChapterValue("");
     setFocusQuestion("");
     setError(null);
   }
@@ -2525,6 +2757,8 @@ export function StudyWorkbench({
             onSortModeChange={setSortMode}
             chapterValue={chapterValue}
             onChapterChange={setChapterValue}
+            endChapterValue={endChapterValue}
+            onEndChapterChange={setEndChapterValue}
             focusQuestion={focusQuestion}
             onFocusChange={setFocusQuestion}
             onSubmit={onSubmit}

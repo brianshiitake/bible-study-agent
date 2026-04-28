@@ -10,11 +10,11 @@ const envSchema = z.object({
   SUPABASE_CONNECTION_STRING: z.string().optional(),
   RAPIDAPI_COMPLETE_STUDY_BIBLE_HOST: z.string().optional(),
   WEBSITE_PASSWORD: z.string().optional(),
-  STUDY_MODEL_GPT: z.string().default("openai/gpt-5.4"),
+  STUDY_MODEL_GPT: z.string().default("openai/gpt-5.5"),
   STUDY_MODEL_OPUS: z.string().default("anthropic/claude-opus-4.6"),
   STUDY_MODEL_GEMINI: z.string().default("google/gemini-3.1-pro-preview"),
   STUDY_MODEL_GLM: z.string().default("z-ai/glm-4.5"),
-  STUDY_MODEL_SYNTHESIS: z.string().default("openai/gpt-5.4"),
+  STUDY_MODEL_SYNTHESIS: z.string().default("openai/gpt-5.5"),
 });
 
 export type AppEnv = z.infer<typeof envSchema>;

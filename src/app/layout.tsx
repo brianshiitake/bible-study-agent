@@ -16,7 +16,7 @@ const ibmPlexSans = IBM_Plex_Sans({
 export const metadata: Metadata = {
   title: "Bible Study Agents",
   description:
-    "A TypeScript LangGraph dashboard for running parallel Bible-study agents over a chapter and synthesizing their results.",
+    "A TypeScript LangGraph dashboard for running parallel Bible-study agents over a Bible passage and synthesizing their results.",
 };
 
 export default function RootLayout({

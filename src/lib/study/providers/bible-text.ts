@@ -56,7 +56,7 @@ type YouVersionPassage = {
   reference?: string;
 };
 
-type ChapterProvider = "youversion-api" | "youversion-web" | "public";
+type ChapterProvider = "youversion-api" | "youversion-web" | "public" | "mixed";
 
 export type ChapterProviderUsage = {
   provider: ChapterProvider;
@@ -438,7 +438,7 @@ async function getBibleDotComChapterTextForVersion(
   });
 }
 
-export async function getChapterTextForVersion(
+async function getSingleChapterTextForVersion(
   parsedReference: ParsedReference,
   versionId: string,
 ): Promise<{ text: ChapterTextResult; provider: ChapterProvider; warnings: string[] }> {
@@ -496,6 +496,103 @@ export async function getChapterTextForVersion(
   };
 }
 
+function buildSingleChapterReference(
+  parsedReference: ParsedReference,
+  chapter: number,
+): ParsedReference {
+  return {
+    ...parsedReference,
+    reference: `${parsedReference.book.name} ${chapter}`,
+    osis: `${parsedReference.bookOsis}.${chapter}`,
+    chapter,
+    startChapter: chapter,
+    endChapter: chapter,
+    chapters: [chapter],
+  };
+}
+
+function addChapterPrefixToVerses(
+  chapter: number,
+  verses: ChapterTextResult["verses"],
+  includeChapterPrefix: boolean,
+) {
+  if (!includeChapterPrefix) {
+    return verses;
+  }
+
+  return verses.map((verse) => ({
+    ...verse,
+    verse: `${chapter}:${verse.verse}`,
+  }));
+}
+
+function mergeChapterTextResults(
+  parsedReference: ParsedReference,
+  results: Array<{
+    chapter: number;
+    result: Awaited<ReturnType<typeof getSingleChapterTextForVersion>>;
+  }>,
+) {
+  const first = results[0]?.result.text;
+
+  if (!first) {
+    throw new Error(`No verses were returned for ${parsedReference.reference}.`);
+  }
+
+  const providers = new Set(results.map((entry) => entry.result.provider));
+  const provider =
+    providers.size === 1
+      ? (Array.from(providers)[0] as ChapterProvider)
+      : ("mixed" as const);
+  const includeChapterPrefix = (parsedReference.chapters?.length ?? 1) > 1;
+
+  return {
+    text: chapterTextSchema.parse({
+      versionId: first.versionId,
+      versionLabel: first.versionLabel,
+      description: first.description,
+      language: first.language,
+      scope: first.scope,
+      attribution: first.attribution,
+      sourceUrl: first.sourceUrl,
+      verses: results.flatMap((entry) =>
+        addChapterPrefixToVerses(
+          entry.chapter,
+          entry.result.text.verses,
+          includeChapterPrefix,
+        ),
+      ),
+    }),
+    provider,
+    warnings: results.flatMap((entry) => entry.result.warnings),
+  };
+}
+
+export async function getChapterTextForVersion(
+  parsedReference: ParsedReference,
+  versionId: string,
+): Promise<{ text: ChapterTextResult; provider: ChapterProvider; warnings: string[] }> {
+  const chapters = parsedReference.chapters ?? [parsedReference.chapter];
+
+  if (chapters.length === 1) {
+    return getSingleChapterTextForVersion(parsedReference, versionId);
+  }
+
+  const results = await mapWithConcurrency(
+    chapters,
+    2,
+    async (chapter) => ({
+      chapter,
+      result: await getSingleChapterTextForVersion(
+        buildSingleChapterReference(parsedReference, chapter),
+        versionId,
+      ),
+    }),
+  );
+
+  return mergeChapterTextResults(parsedReference, results);
+}
+
 export async function getChapterTexts(
   parsedReference: ParsedReference,
   versionIds: string[],
@@ -545,7 +642,7 @@ export async function getChapterTexts(
 
   if (texts.length < 2) {
     throw new Error(
-      "At least two chapter translations are required to compare the passage.",
+      "At least two passage translations are required to compare the study text.",
     );
   }
 

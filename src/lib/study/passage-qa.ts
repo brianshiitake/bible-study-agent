@@ -171,11 +171,11 @@ export async function answerPassageQuestion(input: PassageQuestionRequest) {
   }
 
   const agent = createAgent({
-    model: createOpenRouterModel("openai/gpt-5.4"),
+    model: createOpenRouterModel("openai/gpt-5.5"),
     responseFormat: passageQuestionAnswerSchema as never,
     systemPrompt: [
-      "You answer questions about a selected portion of a Bible chapter.",
-      "Use the selected text first, but explain it in light of the entire chapter and the adjacent chapters provided.",
+      "You answer questions about a selected portion of a Bible passage.",
+      "Use the selected text first, but explain it in light of the entire passage and the adjacent chapters provided.",
       "Keep the answer clear, pastoral, and textually grounded.",
       "Do not claim hidden certainty. Distinguish observation from inference where necessary.",
       "Return concise but substantial explanations that help a learner understand the selected section.",
@@ -191,7 +191,7 @@ export async function answerPassageQuestion(input: PassageQuestionRequest) {
           `Selected text: ${input.selectionText}`,
           `User question: ${input.question}`,
           "",
-          "Entire chapter:",
+          "Entire passage:",
           formatPrimaryChapterText(study.id, selectedVersion),
           "",
           "Adjacent chapter context:",

@@ -20,6 +20,33 @@ function createStudySlug(reference: string, id: string) {
   return `${slugifyReference(reference)}-${id.slice(0, 8)}`;
 }
 
+function normalizeLegacyParsedReference(parsedReference: Record<string, unknown>) {
+  const chapter =
+    typeof parsedReference.chapter === "number" ? parsedReference.chapter : 1;
+  const startChapter =
+    typeof parsedReference.startChapter === "number"
+      ? parsedReference.startChapter
+      : chapter;
+  const endChapter =
+    typeof parsedReference.endChapter === "number"
+      ? parsedReference.endChapter
+      : startChapter;
+  const chapters = Array.isArray(parsedReference.chapters)
+    ? parsedReference.chapters
+    : Array.from(
+        { length: Math.max(1, endChapter - startChapter + 1) },
+        (_, index) => startChapter + index,
+      );
+
+  return {
+    ...parsedReference,
+    startChapter,
+    endChapter,
+    chapters,
+    chapter,
+  };
+}
+
 function normalizePersistedStudyPayload(rawPayload: PersistedStudyResult | string) {
   const payload = typeof rawPayload === "string" ? JSON.parse(rawPayload) : rawPayload;
 
@@ -44,6 +71,14 @@ function normalizePersistedStudyPayload(rawPayload: PersistedStudyResult | strin
     record.finalSynthesis && typeof record.finalSynthesis === "object"
       ? (record.finalSynthesis as Record<string, unknown>)
       : {};
+  const versions = Array.isArray(context.versions) ? context.versions : [];
+  const firstVersion =
+    versions[0] && typeof versions[0] === "object"
+      ? (versions[0] as Record<string, unknown>)
+      : {};
+  const firstVersionVerses = Array.isArray(firstVersion.verses)
+    ? firstVersion.verses
+    : [];
   const fallbackTerm =
     typeof book.name === "string"
       ? book.name
@@ -55,12 +90,73 @@ function normalizePersistedStudyPayload(rawPayload: PersistedStudyResult | strin
     ...record,
     context: {
       ...context,
+      parsedReference: normalizeLegacyParsedReference(parsedReference),
       relatedChapters: Array.isArray(context.relatedChapters)
         ? context.relatedChapters
+        : [],
+      openBibleCrossReferences: Array.isArray(context.openBibleCrossReferences)
+        ? context.openBibleCrossReferences
         : [],
     },
     finalSynthesis: {
       ...finalSynthesis,
+      verseBreakdown: Array.isArray(finalSynthesis.verseBreakdown)
+        ? finalSynthesis.verseBreakdown
+        : firstVersionVerses.length
+          ? firstVersionVerses.map((verse) => {
+              const verseRecord =
+                verse && typeof verse === "object"
+                  ? (verse as Record<string, unknown>)
+                  : {};
+              const verseLabel =
+                typeof verseRecord.verse === "string"
+                  ? verseRecord.verse
+                  : "Verse";
+
+              return {
+                verse: verseLabel,
+                meaning:
+                  "Verse-by-verse notes were unavailable in this legacy study record.",
+                jesusContext:
+                  "Rerun the study to generate Jesus-context notes for this verse.",
+                significance:
+                  "Rerun the study to generate significance and undertone notes for this verse.",
+                crossReferences: [
+                  {
+                    reference:
+                      typeof parsedReference.reference === "string"
+                        ? parsedReference.reference
+                        : "Selected passage",
+                    relevance:
+                      "Legacy fallback reference generated while loading an older study.",
+                  },
+                ],
+              };
+            })
+          : [
+              {
+                verse:
+                  typeof parsedReference.reference === "string"
+                    ? parsedReference.reference
+                    : "Selected passage",
+                meaning:
+                  "Verse-by-verse notes were unavailable in this legacy study record.",
+                jesusContext:
+                  "Rerun the study to generate Jesus-context notes.",
+                significance:
+                  "Rerun the study to generate significance and undertone notes.",
+                crossReferences: [
+                  {
+                    reference:
+                      typeof parsedReference.reference === "string"
+                        ? parsedReference.reference
+                        : "Selected passage",
+                    relevance:
+                      "Legacy fallback reference generated while loading an older study.",
+                  },
+                ],
+              },
+            ],
       pronunciationGuide: Array.isArray(finalSynthesis.pronunciationGuide)
         ? finalSynthesis.pronunciationGuide
         : [
